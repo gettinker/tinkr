@@ -48,6 +48,8 @@ Works with every major cloud provider and observability stack out of the box.
 | `datadog` | Logs API v2 | Metrics API v1 | APM Traces | API key + App key |
 | `elastic` | Elasticsearch / OpenSearch | Aggregations | APM | API key |
 
+All backends accept the same **unified query syntax** — you never need to learn backend-specific query languages. See [Unified query language](#unified-query-language) below.
+
 ---
 
 ## Quick start
@@ -119,6 +121,14 @@ docker compose -f deploy/docker-compose.yml up
 # Grafana UI    → http://localhost:3000
 ```
 
+For end-to-end testing with a realistic dummy service that generates logs and metrics:
+
+```bash
+cd tests/manual && ./run.sh   # includes dummy payments-api
+./generate_traffic.sh incident
+tinker analyze payments-api --since 5m
+```
+
 ---
 
 ## CLI reference
@@ -142,6 +152,7 @@ tinker fix INC-abc123 --approve             # validate + apply + open PR
 # ── Raw observability (no AI) ─────────────────────────────────────
 tinker logs payments-api
 tinker logs payments-api -q "level:ERROR" --since 30m -n 100
+tinker logs payments-api -q 'level:(ERROR OR WARN) AND "timeout"'
 tinker metrics payments-api Errors --since 2h
 tinker monitor --services payments-api,auth-service
 
@@ -378,12 +389,89 @@ All checks passed.
 
 ---
 
+## Unified query language
+
+Tinker uses a single query syntax across all backends. You write it once; Tinker translates it to CloudWatch Logs Insights, LogQL, GCP filter, KQL, Datadog search, or Elasticsearch DSL automatically.
+
+### Syntax
+
+| Pattern | Meaning |
+|---|---|
+| `level:ERROR` | Field match |
+| `level:(ERROR OR WARN)` | Multi-value field match |
+| `"connection timeout"` | Exact phrase |
+| `timeout` | Substring match |
+| `level:ERROR AND "timeout"` | Logical AND (explicit) |
+| `level:ERROR "timeout"` | Logical AND (implicit) |
+| `level:ERROR OR level:WARN` | Logical OR |
+| `NOT "health check"` | Negation |
+| `(level:ERROR OR level:WARN) AND service:payments-api` | Grouped expressions |
+
+### Field aliases
+
+`severity` → `level`, `svc` / `app` → `service`, `msg` → `message`, `trace` → `trace_id`
+
+### Examples
+
+```bash
+# Same query works on every backend
+tinker logs payments-api -q 'level:ERROR AND "timeout"'
+tinker logs auth-service  -q 'level:(ERROR OR WARN) AND "database"'
+tinker logs orders-api    -q 'NOT "health check" AND level:ERROR'
+```
+
+### How it maps
+
+| Tinker query | CloudWatch | LogQL | GCP filter | KQL | Datadog |
+|---|---|---|---|---|---|
+| `level:ERROR` | `level = 'ERROR'` | `{level="ERROR"}` | `severity="ERROR"` | `SeverityLevel == "Error"` | `status:error` |
+| `"timeout"` | `@message like /timeout/` | `\|= \`timeout\`` | `textPayload:"timeout"` | `Message contains "timeout"` | `"timeout"` |
+| `level:(ERROR OR WARN)` | `level in ['ERROR','WARN']` | `level=~\`ERROR\|WARN\`` | `(severity="ERROR" OR severity="WARNING")` | `SeverityLevel in ("Error","Warning")` | `status:(error OR warn)` |
+
+Raw backend-native queries (LogQL `{...}`, Insights `| filter ...`, KQL `| where ...`) are still accepted and passed through unchanged.
+
+---
+
+## Manual testing
+
+A local end-to-end test stack lives in [`tests/manual/`](tests/manual/). It starts Tinker, a dummy `payments-api` that emits logs at every level, Loki, Prometheus, and Grafana — no cloud account needed.
+
+```bash
+cd tests/manual
+cp ../../.env.example .env   # set ANTHROPIC_API_KEY
+./run.sh
+```
+
+Generate traffic to create realistic log data:
+
+```bash
+# Steady mixed traffic (Ctrl-C to stop)
+./generate_traffic.sh
+
+# Simulate an incident: error spike + circuit breaker open
+./generate_traffic.sh incident
+
+# 100 rapid requests then exit
+./generate_traffic.sh burst
+```
+
+Then analyze with Tinker:
+
+```bash
+tinker analyze payments-api --since 5m -v
+```
+
+The dummy server exposes endpoints for each log level (`/pay/ok`, `/pay/error`, `/pay/slow`, `/pay/warn`, `/pay/critical`, `/pay/debug`) and Prometheus metrics at `/metrics`. See [`tests/manual/README.md`](tests/manual/README.md) for full details.
+
+---
+
 ## Development
 
 ```bash
 uv sync
 uv run pytest             # all tests
 uv run pytest -k backend  # backend tests only
+uv run pytest tests/test_query/  # unified query language tests
 uv run ruff check src/    # lint
 uv run mypy src/          # type check
 ```
