@@ -52,58 +52,120 @@ Works with every major cloud provider and observability stack out of the box.
 
 ## Quick start
 
-### Option A — Local dev (no cloud account needed)
+### The fast path — `tinker init`
 
-Spins up Tinker + Loki + Prometheus + Grafana in Docker:
+One command walks you through everything: cloud selection, IAM setup, LLM provider, Slack, GitHub, and optionally deploys the server.
+
+```bash
+pip install tinker-agent   # or: uv add tinker-agent
+tinker init
+```
+
+```
+? Which cloud provider are you using?
+  ❯ AWS
+    GCP (Google Cloud)
+    Azure
+    Self-hosted (Grafana + Prometheus)
+    Datadog
+    Elastic / OpenSearch
+
+? Where will the Tinker server run?
+  ❯ AWS ECS Fargate (recommended)
+    Docker Compose (local/VM)
+
+? Which LLM provider do you want to use?
+  ❯ Anthropic (Claude) — direct
+    OpenRouter — access 100+ models
+    OpenAI (GPT-4o etc.)
+    Groq — fast open-source models
+
+  Anthropic API key: ****
+
+? Enable Slack bot integration? (y/N)
+? Enable GitHub integration? (y/N)
+
+✓ Config written to .env
+✓ Deploy config written to tinker.toml
+
+Your Tinker API key (save this):
+  aBcDeFgHiJkL...
+
+? Deploy the Tinker server now? (Y/n)
+```
+
+That's it. `tinker init` handles IAM role creation, generates and hashes your API key, writes `.env`, and optionally runs `tinker deploy`.
+
+---
+
+### Manual setup
+
+If you prefer to configure things yourself:
 
 ```bash
 git clone https://github.com/your-org/tinker.git
 cd tinker
-cp .env.example .env
-# Set ANTHROPIC_API_KEY in .env — that's the only required variable
-docker compose -f deploy/docker-compose.yml up
+uv sync
+cp .env.example .env        # edit with your values
+uv run tinker-server        # start the server
 ```
 
-Tinker is now running at `http://localhost:8000`.
-
-### Option B — Against a real cloud backend
+For local dev with no cloud account (Grafana stack in Docker):
 
 ```bash
-uv sync
-cp .env.example .env
-# Set ANTHROPIC_API_KEY + TINKER_BACKEND + backend-specific vars
-uv run tinker-server
+cp .env.example .env        # only ANTHROPIC_API_KEY needed
+docker compose -f deploy/docker-compose.yml up
+# Tinker server → http://localhost:8000
+# Grafana UI    → http://localhost:3000
 ```
 
 ---
 
-## CLI
-
-The CLI talks to a running Tinker server. Point it at your deployment:
+## CLI reference
 
 ```bash
-export TINKER_SERVER_URL=http://localhost:8000   # or your deployed URL
-export TINKER_API_TOKEN=<your-api-key>
+# ── Setup ────────────────────────────────────────────────────────
+tinker init                                  # interactive setup wizard
+tinker deploy                                # deploy server to configured cloud
+tinker doctor                                # verify all services are reachable
+tinker version
 
-# Analyze a service for incidents in the last hour
-tinker analyze payments-api --since 1h
+# ── Analysis ─────────────────────────────────────────────────────
+tinker analyze payments-api                  # RCA for the last hour
+tinker analyze payments-api --since 2h -v   # stream agent reasoning
+tinker analyze payments-api --deep          # extended thinking (Claude Opus)
 
-# Stream agent reasoning step by step
-tinker analyze payments-api --since 2h --verbose
+# ── Fix workflow ──────────────────────────────────────────────────
+tinker fix INC-abc123                        # show proposed fix
+tinker fix INC-abc123 --approve             # validate + apply + open PR
 
-# Use extended thinking for deep root cause analysis
-tinker analyze payments-api --since 6h --deep
-
-# Get and apply a fix (--approve required)
-tinker fix INC-abc123
-tinker fix INC-abc123 --approve
-
-# Tail raw logs (no AI)
-tinker logs payments-api --query "level:ERROR" --since 30m
-
-# Start the monitoring loop (prints anomalies to stdout)
+# ── Raw observability (no AI) ─────────────────────────────────────
+tinker logs payments-api
+tinker logs payments-api -q "level:ERROR" --since 30m -n 100
+tinker metrics payments-api Errors --since 2h
 tinker monitor --services payments-api,auth-service
+
+# ── Help ──────────────────────────────────────────────────────────
+tinker help
 ```
+
+---
+
+## Supported LLM providers
+
+Tinker uses [LiteLLM](https://github.com/BerriAI/litellm) — swap providers by changing one env var, no code changes needed.
+
+| Provider | `TINKER_DEFAULT_MODEL` example | Key variable |
+|---|---|---|
+| Anthropic (direct) | `anthropic/claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
+| OpenRouter | `openrouter/anthropic/claude-opus-4-6` | `OPENROUTER_API_KEY` |
+| OpenRouter | `openrouter/openai/gpt-4o` | `OPENROUTER_API_KEY` |
+| OpenRouter | `openrouter/meta-llama/llama-3.1-70b-instruct` | `OPENROUTER_API_KEY` |
+| OpenAI | `openai/gpt-4o` | `OPENAI_API_KEY` |
+| Groq | `groq/llama-3.1-70b-versatile` | `GROQ_API_KEY` |
+| Ollama (local) | `ollama/llama3` | — |
+
+`tinker init` lets you pick the provider interactively and sets all of this up.
 
 ---
 
@@ -142,38 +204,60 @@ Once deployed, add Tinker as a remote MCP server in `.claude/settings.json`:
 }
 ```
 
-Claude can then call `query_logs`, `get_metrics`, `detect_anomalies`, `search_code`, and `suggest_fix` directly from your editor.
+Claude can then call `query_logs`, `get_metrics`, `detect_anomalies`, `search_code`, and `suggest_fix` directly from your editor — against your live production observability backend.
 
 ---
 
 ## Deployment
 
-### AWS (ECS Fargate)
+### Automated — `tinker deploy`
+
+After running `tinker init`, deploy with one command:
 
 ```bash
-# 1. Create the IAM role with the minimal read-only policy
-aws iam create-role --role-name tinker-readonly ...
-aws iam put-role-policy --role-name tinker-readonly \
-  --policy-document file://deploy/aws/iam-policy.json
-
-# 2. Store secrets
-aws secretsmanager create-secret --name tinker/anthropic-api-key \
-  --secret-string "sk-ant-..."
-
-# 3. Push image and register task
-aws ecr create-repository --repository-name tinker
-docker build -f deploy/Dockerfile -t tinker .
-docker push <ecr-url>/tinker:latest
-aws ecs register-task-definition \
-  --cli-input-json file://deploy/aws/task-definition.json
+tinker deploy
 ```
 
-The task definition in [deploy/aws/task-definition.json](deploy/aws/task-definition.json) wires the IAM role and pulls all secrets from Secrets Manager — **no credentials in the container**.
+This reads `tinker.toml` and handles the full flow for your cloud:
 
-### GCP (Cloud Run)
+| Cloud | What `tinker deploy` does |
+|---|---|
+| **AWS ECS** | Creates ECR repo → builds + pushes image → registers ECS task definition → creates/updates ECS service |
+| **GCP Cloud Run** | Cloud Build or local Docker → Artifact Registry → `gcloud run services replace` |
+| **Azure Container Apps** | `az acr build` → `az containerapp create` |
+| **Self-hosted** | `docker compose up --build -d` |
+
+### Manual deployment
+
+<details>
+<summary>AWS ECS Fargate</summary>
 
 ```bash
-# 1. Create a service account with read-only roles
+# 1. Create the read-only IAM role
+aws iam create-role --role-name tinker-readonly \
+  --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ecs-tasks.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+aws iam put-role-policy --role-name tinker-readonly \
+  --policy-name TinkerReadOnly \
+  --policy-document file://deploy/aws/iam-policy.json
+
+# 2. Store secrets in Secrets Manager
+aws secretsmanager create-secret --name tinker/anthropic-api-key --secret-string "sk-ant-..."
+
+# 3. Build, push, deploy
+aws ecr create-repository --repository-name tinker
+docker build -f deploy/Dockerfile -t <ecr-url>/tinker:latest .
+docker push <ecr-url>/tinker:latest
+aws ecs register-task-definition --cli-input-json file://deploy/aws/task-definition.json
+```
+
+See [deploy/aws/task-definition.json](deploy/aws/task-definition.json) — the task role and Secrets Manager wiring are already configured.
+</details>
+
+<details>
+<summary>GCP Cloud Run</summary>
+
+```bash
+# 1. Create service account
 gcloud iam service-accounts create tinker-readonly
 gcloud projects add-iam-policy-binding PROJECT_ID \
   --member="serviceAccount:tinker-readonly@PROJECT_ID.iam.gserviceaccount.com" \
@@ -182,46 +266,48 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
   --member="serviceAccount:tinker-readonly@PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/monitoring.viewer"
 
-# 2. Store secrets in Secret Manager
+# 2. Store secrets
 echo -n "sk-ant-..." | gcloud secrets create tinker-anthropic-api-key --data-file=-
 
 # 3. Deploy
 gcloud run services replace deploy/gcp/cloudrun.yaml
 ```
 
-The service account is attached via Workload Identity — **no key file anywhere**.
+See [deploy/gcp/cloudrun.yaml](deploy/gcp/cloudrun.yaml).
+</details>
 
-### Azure (Container Apps)
+<details>
+<summary>Azure Container Apps</summary>
 
 ```bash
-# 1. Enable system-assigned managed identity (done in the manifest)
-# 2. Assign roles
-az role assignment create --assignee <managed-identity-principal-id> \
-  --role "Monitoring Reader" --scope /subscriptions/SUBSCRIPTION_ID
-
-# 3. Store secrets in Key Vault
-az keyvault secret set --vault-name tinker-vault \
-  --name anthropic-api-key --value "sk-ant-..."
-
-# 4. Deploy
+# 1. Deploy (managed identity created automatically)
 az containerapp create --yaml deploy/azure/container-app.yaml
+
+# 2. Assign roles to the managed identity
+az role assignment create --assignee <principal-id> \
+  --role "Monitoring Reader" --scope /subscriptions/SUBSCRIPTION_ID
+az role assignment create --assignee <principal-id> \
+  --role "Log Analytics Reader" --scope /subscriptions/SUBSCRIPTION_ID
 ```
 
-See [deploy/azure/container-app.yaml](deploy/azure/container-app.yaml) for the full manifest.
+See [deploy/azure/container-app.yaml](deploy/azure/container-app.yaml).
+</details>
 
 ---
 
 ## Configuration
 
-Set `TINKER_BACKEND` and the variables for that backend. Everything else is optional.
+`tinker init` writes all of this for you. For manual configuration:
 
 ### Core (all deployments)
 
 | Variable | Description |
 |---|---|
-| `ANTHROPIC_API_KEY` | Claude API key **(required)** |
+| `ANTHROPIC_API_KEY` | Claude API key — or use `OPENROUTER_API_KEY` / `OPENAI_API_KEY` / `GROQ_API_KEY` |
 | `TINKER_BACKEND` | Active backend: `cloudwatch` `gcp` `azure` `grafana` `datadog` `elastic` |
-| `TINKER_API_KEYS` | JSON array of hashed API keys for client auth (see below) |
+| `TINKER_DEFAULT_MODEL` | LiteLLM model string, e.g. `anthropic/claude-sonnet-4-6` |
+| `TINKER_DEEP_RCA_MODEL` | Model for `--deep` analysis, e.g. `anthropic/claude-opus-4-6` |
+| `TINKER_API_KEYS` | JSON array of hashed client keys (generated by `tinker init`) |
 | `TINKER_SERVER_PORT` | Default `8000` |
 
 ### Per-backend
@@ -230,24 +316,26 @@ Set `TINKER_BACKEND` and the variables for that backend. Everything else is opti
 |---|---|
 | `cloudwatch` | `AWS_REGION` — credentials from IAM role (no keys needed) |
 | `gcp` | `GCP_PROJECT_ID` — credentials from Workload Identity (no keys needed) |
-| `azure` | `AZURE_LOG_ANALYTICS_WORKSPACE_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP` — credentials from Managed Identity |
-| `grafana` | `GRAFANA_LOKI_URL`, `GRAFANA_PROMETHEUS_URL`, `GRAFANA_TEMPO_URL`, optionally `GRAFANA_API_KEY` |
+| `azure` | `AZURE_LOG_ANALYTICS_WORKSPACE_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP` |
+| `grafana` | `GRAFANA_LOKI_URL`, `GRAFANA_PROMETHEUS_URL`, `GRAFANA_TEMPO_URL` |
 | `datadog` | `DATADOG_API_KEY`, `DATADOG_APP_KEY`, `DATADOG_SITE` |
 | `elastic` | `ELASTICSEARCH_URL`, `ELASTICSEARCH_API_KEY` |
 
-See [.env.example](.env.example) for the complete reference.
+See [.env.example](.env.example) for the complete reference with comments.
 
-### Generating API keys for clients
+### Managing client API keys
+
+`tinker init` generates and hashes a key automatically. To add more:
 
 ```bash
-# 1. Generate a raw key
+# Generate
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 
-# 2. Hash it (store the hash in TINKER_API_KEYS, give the raw key to the client)
+# Hash (store hash on server, give raw key to client)
 python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" <raw-key>
 
-# 3. Set TINKER_API_KEYS on the server
-TINKER_API_KEYS='[{"hash":"<sha256>","subject":"cli-alice","roles":["sre"]}]'
+# Add to server env
+TINKER_API_KEYS='[{"hash":"<sha256>","subject":"alice","roles":["sre"]}]'
 ```
 
 ---
@@ -257,13 +345,36 @@ TINKER_API_KEYS='[{"hash":"<sha256>","subject":"cli-alice","roles":["sre"]}]'
 | Concern | How Tinker handles it |
 |---|---|
 | Cloud credentials | Never stored — server uses IAM role / Workload Identity / Managed Identity |
-| Client auth | Short API keys (SHA-256 hashed at rest) or short-lived JWTs via your IdP |
+| Client auth | API keys (SHA-256 hashed at rest) or short-lived JWTs via your IdP |
 | Destructive operations | `apply_fix` and `create_pr` require explicit `/approve` — blocked by default in Claude Code |
 | RBAC | Slack commands gated by user group → role mapping |
-| Prompt injection | Log content sanitized with regex before being included in any LLM prompt |
+| Prompt injection | Log content sanitized with regex before inclusion in any LLM prompt |
 | Fix safety | Proposed diffs scanned with Semgrep before being shown to the user |
 | Audit trail | Every agent tool call logged with actor, session ID, timestamp, and approval chain |
-| Secrets in logs | Credentials stripped from all log data before storage or LLM submission |
+| Secrets in logs | Credentials stripped from all log data before LLM submission |
+
+---
+
+## Verify your setup
+
+```bash
+tinker doctor
+```
+
+```
+╭─────────────────────────────────────────────────────────╮
+│  Tinker Doctor                                          │
+╰─────────────────────────────────────────────────────────╯
+
+Check    Status   Detail
+──────   ──────   ──────────────────────────────────────────
+LLM      ✓ OK     anthropic/claude-sonnet-4-6 → OK
+Backend  ✓ OK     cloudwatch
+Slack    ✓ OK     auth_test passed
+GitHub   ✓ OK     authenticated
+
+All checks passed.
+```
 
 ---
 

@@ -23,6 +23,7 @@ dependencies = [
     # CLI + UI
     "typer>=0.12",
     "rich>=13",
+    "questionary>=2.0",
     # Slack
     "slack-bolt>=1.18",
     # AWS
