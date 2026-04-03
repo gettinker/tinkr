@@ -1,0 +1,70 @@
+apiVersion: app.k8s.io/v1
+kind: ContainerApp
+metadata:
+  name: tinker
+  resourceGroup: RESOURCE_GROUP
+  location: eastus
+spec:
+  managedEnvironmentId: /subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.App/managedEnvironments/tinker-env
+  configuration:
+    ingress:
+      external: false        # internal only — expose via API Gateway or VPN
+      targetPort: 8000
+    secrets:
+      - name: anthropic-api-key
+        keyVaultUrl: https://tinker-vault.vault.azure.net/secrets/anthropic-api-key
+        identity: system
+      - name: tinker-api-keys
+        keyVaultUrl: https://tinker-vault.vault.azure.net/secrets/tinker-api-keys
+        identity: system
+      - name: slack-bot-token
+        keyVaultUrl: https://tinker-vault.vault.azure.net/secrets/slack-bot-token
+        identity: system
+      - name: slack-signing-secret
+        keyVaultUrl: https://tinker-vault.vault.azure.net/secrets/slack-signing-secret
+        identity: system
+      - name: github-token
+        keyVaultUrl: https://tinker-vault.vault.azure.net/secrets/github-token
+        identity: system
+  template:
+    scale:
+      minReplicas: 0
+      maxReplicas: 5
+    containers:
+      - name: tinker
+        image: tinkerregistry.azurecr.io/tinker:latest
+        resources:
+          cpu: 0.5
+          memory: 1Gi
+        env:
+          - name: TINKER_BACKEND
+            value: azure
+          - name: AZURE_LOG_ANALYTICS_WORKSPACE_ID
+            value: WORKSPACE_ID
+          - name: AZURE_SUBSCRIPTION_ID
+            value: SUBSCRIPTION_ID
+          - name: AZURE_RESOURCE_GROUP
+            value: RESOURCE_GROUP
+          - name: TINKER_SERVER_PORT
+            value: "8000"
+          # Secrets from Key Vault — Managed Identity handles auth
+          - name: ANTHROPIC_API_KEY
+            secretRef: anthropic-api-key
+          - name: TINKER_API_KEYS
+            secretRef: tinker-api-keys
+          - name: SLACK_BOT_TOKEN
+            secretRef: slack-bot-token
+          - name: SLACK_SIGNING_SECRET
+            secretRef: slack-signing-secret
+          - name: GITHUB_TOKEN
+            secretRef: github-token
+        probes:
+          - type: Liveness
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+    # System-assigned managed identity — gets Monitoring Reader + Log Analytics Reader
+    identity:
+      type: SystemAssigned

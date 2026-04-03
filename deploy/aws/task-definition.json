@@ -1,0 +1,58 @@
+{
+  "family": "tinker",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/tinker-readonly",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "tinker",
+      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/tinker:latest",
+      "portMappings": [{ "containerPort": 8000, "protocol": "tcp" }],
+      "environment": [
+        { "name": "TINKER_BACKEND",     "value": "cloudwatch" },
+        { "name": "AWS_REGION",         "value": "us-east-1"  },
+        { "name": "TINKER_SERVER_PORT", "value": "8000"        }
+      ],
+      "secrets": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:tinker/anthropic-api-key"
+        },
+        {
+          "name": "TINKER_API_KEYS",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:tinker/api-keys"
+        },
+        {
+          "name": "SLACK_BOT_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:tinker/slack-bot-token"
+        },
+        {
+          "name": "SLACK_SIGNING_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:tinker/slack-signing-secret"
+        },
+        {
+          "name": "GITHUB_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:tinker/github-token"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/tinker",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "tinker"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 15
+      }
+    }
+  ]
+}
