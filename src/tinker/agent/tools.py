@@ -1,4 +1,12 @@
-"""Agent tool definitions and dispatcher."""
+"""Agent tool definitions (OpenAI function-call format) and dispatcher.
+
+LiteLLM translates these to the native format for each provider:
+  - Anthropic  → input_schema / tool_use blocks
+  - OpenAI     → function calling
+  - OpenRouter → passes through to the underlying provider
+
+Tool schemas use the OpenAI `{"type": "function", "function": {...}}` envelope.
+"""
 
 from __future__ import annotations
 
@@ -13,16 +21,25 @@ from tinker.backends.base import ObservabilityBackend
 
 log = structlog.get_logger(__name__)
 
-# ── Tool schema definitions (sent to Claude) ──────────────────────────────────
+
+# ── Tool schema definitions (OpenAI function-call format) ─────────────────────
+
+def _fn(name: str, description: str, parameters: dict[str, Any]) -> dict[str, Any]:
+    """Shorthand for building an OpenAI function tool definition."""
+    return {
+        "type": "function",
+        "function": {"name": name, "description": description, "parameters": parameters},
+    }
+
 
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
-    {
-        "name": "query_logs",
-        "description": (
+    _fn(
+        "query_logs",
+        (
             "Query logs from the configured observability backend for a service. "
             "Returns up to `limit` log entries matching the query in the given time range."
         ),
-        "input_schema": {
+        {
             "type": "object",
             "properties": {
                 "service": {"type": "string", "description": "Service or application name"},
@@ -33,57 +50,62 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "default": "1h",
                 },
                 "limit": {"type": "integer", "default": 100},
-                "backend": {
-                    "type": "string",
-                    "enum": ["cloudwatch", "elastic", "gcp"],
-                    "default": "cloudwatch",
-                },
             },
             "required": ["service", "query"],
         },
-    },
-    {
-        "name": "get_recent_errors",
-        "description": "Return recent ERROR-level log entries for a service.",
-        "input_schema": {
+    ),
+    _fn(
+        "get_recent_errors",
+        "Return recent ERROR-level log entries for a service.",
+        {
             "type": "object",
             "properties": {
                 "service": {"type": "string"},
                 "minutes": {"type": "integer", "default": 30},
-                "backend": {"type": "string", "default": "cloudwatch"},
             },
             "required": ["service"],
         },
-    },
-    {
-        "name": "get_metrics",
-        "description": "Fetch a metric time series for a service.",
-        "input_schema": {
+    ),
+    _fn(
+        "get_metrics",
+        "Fetch a metric time series for a service.",
+        {
             "type": "object",
             "properties": {
                 "service": {"type": "string"},
                 "metric_name": {"type": "string"},
                 "since": {"type": "string", "default": "1h"},
-                "backend": {"type": "string", "default": "cloudwatch"},
             },
             "required": ["service", "metric_name"],
         },
-    },
-    {
-        "name": "get_file",
-        "description": "Read a source file from the monitored repository.",
-        "input_schema": {
+    ),
+    _fn(
+        "detect_anomalies",
+        "Automatically detect error spikes and metric anomalies for a service.",
+        {
+            "type": "object",
+            "properties": {
+                "service": {"type": "string"},
+                "window_minutes": {"type": "integer", "default": 10},
+            },
+            "required": ["service"],
+        },
+    ),
+    _fn(
+        "get_file",
+        "Read a source file from the monitored repository.",
+        {
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "File path relative to repo root"},
             },
             "required": ["path"],
         },
-    },
-    {
-        "name": "search_code",
-        "description": "Search the codebase for a pattern using ripgrep.",
-        "input_schema": {
+    ),
+    _fn(
+        "search_code",
+        "Search the codebase for a pattern using ripgrep.",
+        {
             "type": "object",
             "properties": {
                 "pattern": {"type": "string"},
@@ -92,14 +114,25 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
             "required": ["pattern"],
         },
-    },
-    {
-        "name": "suggest_fix",
-        "description": (
+    ),
+    _fn(
+        "get_recent_commits",
+        "List recent git commits touching a file path or directory.",
+        {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "default": "."},
+                "n": {"type": "integer", "default": 10},
+            },
+        },
+    ),
+    _fn(
+        "suggest_fix",
+        (
             "Propose a fix as a unified diff. The diff is stored and NOT applied until "
             "the user runs /tinker-approve or --approve."
         ),
-        "input_schema": {
+        {
             "type": "object",
             "properties": {
                 "incident_id": {"type": "string"},
@@ -108,14 +141,14 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
             "required": ["incident_id", "diff", "explanation"],
         },
-    },
-    {
-        "name": "apply_fix",
-        "description": (
+    ),
+    _fn(
+        "apply_fix",
+        (
             "Apply a previously suggested fix and open a PR. "
             "REQUIRES explicit human approval — will fail without it."
         ),
-        "input_schema": {
+        {
             "type": "object",
             "properties": {
                 "incident_id": {"type": "string"},
@@ -123,12 +156,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
             "required": ["incident_id"],
         },
-    },
+    ),
 ]
 
 
 # ── Dispatcher ────────────────────────────────────────────────────────────────
-
 
 class ToolDispatcher:
     """Validates guardrails then routes tool calls to their implementations."""
@@ -142,13 +174,12 @@ class ToolDispatcher:
         self._guardrails = guardrails or GuardRailChain()
         self._backend = backend
         self._repo_path = repo_path
-        # pending diffs keyed by incident_id
         self._pending_fixes: dict[str, dict[str, str]] = {}
 
-    def _get_backend(self, name: str) -> ObservabilityBackend:
+    def _get_backend(self) -> ObservabilityBackend:
         if self._backend:
             return self._backend
-        return get_backend(name)
+        return get_backend()
 
     async def dispatch(
         self,
@@ -165,10 +196,14 @@ class ToolDispatcher:
                 return await self._get_recent_errors(tool_input)
             case "get_metrics":
                 return await self._get_metrics(tool_input)
+            case "detect_anomalies":
+                return await self._detect_anomalies(tool_input)
             case "get_file":
                 return self._get_file(tool_input)
             case "search_code":
                 return self._search_code(tool_input)
+            case "get_recent_commits":
+                return self._get_recent_commits(tool_input)
             case "suggest_fix":
                 return self._suggest_fix(tool_input)
             case "apply_fix":
@@ -179,10 +214,9 @@ class ToolDispatcher:
     # ── Tool implementations ──────────────────────────────────────────────────
 
     async def _query_logs(self, inp: dict[str, Any]) -> list[dict[str, Any]]:
-        backend = self._get_backend(inp.get("backend", "cloudwatch"))
-        since = inp.get("since", "1h")
+        backend = self._get_backend()
         end = datetime.now(timezone.utc)
-        start = backend._parse_since(since)
+        start = backend._parse_since(inp.get("since", "1h"))
         entries = await backend.query_logs(
             service=inp["service"],
             query=inp["query"],
@@ -202,7 +236,7 @@ class ToolDispatcher:
         ]
 
     async def _get_recent_errors(self, inp: dict[str, Any]) -> list[dict[str, Any]]:
-        backend = self._get_backend(inp.get("backend", "cloudwatch"))
+        backend = self._get_backend()
         entries = await backend.get_recent_errors(
             service=inp["service"],
             minutes=inp.get("minutes", 30),
@@ -217,10 +251,9 @@ class ToolDispatcher:
         ]
 
     async def _get_metrics(self, inp: dict[str, Any]) -> list[dict[str, Any]]:
-        backend = self._get_backend(inp.get("backend", "cloudwatch"))
-        since = inp.get("since", "1h")
+        backend = self._get_backend()
         end = datetime.now(timezone.utc)
-        start = backend._parse_since(since)
+        start = backend._parse_since(inp.get("since", "1h"))
         points = await backend.get_metrics(
             service=inp["service"],
             metric_name=inp["metric_name"],
@@ -229,9 +262,16 @@ class ToolDispatcher:
         )
         return [{"timestamp": p.timestamp.isoformat(), "value": p.value} for p in points]
 
+    async def _detect_anomalies(self, inp: dict[str, Any]) -> list[dict[str, Any]]:
+        backend = self._get_backend()
+        anomalies = await backend.detect_anomalies(
+            service=inp["service"],
+            window_minutes=inp.get("window_minutes", 10),
+        )
+        return [a.to_dict() for a in anomalies]
+
     def _get_file(self, inp: dict[str, Any]) -> str:
         import os
-
         repo = self._repo_path or "."
         path = os.path.join(repo, inp["path"].lstrip("/"))
         try:
@@ -242,7 +282,6 @@ class ToolDispatcher:
 
     def _search_code(self, inp: dict[str, Any]) -> str:
         import subprocess
-
         repo = self._repo_path or "."
         result = subprocess.run(
             [
@@ -256,6 +295,13 @@ class ToolDispatcher:
             text=True,
         )
         return result.stdout or "(no matches)"
+
+    def _get_recent_commits(self, inp: dict[str, Any]) -> list[dict[str, str]]:
+        from tinker.code.repo import RepoClient
+        return RepoClient(self._repo_path or ".").recent_commits(
+            service_path=inp.get("path", "."),
+            n=inp.get("n", 10),
+        )
 
     def _suggest_fix(self, inp: dict[str, Any]) -> dict[str, str]:
         incident_id = inp["incident_id"]

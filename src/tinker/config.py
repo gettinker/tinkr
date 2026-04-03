@@ -14,10 +14,26 @@ class TinkerConfig(BaseSettings):
         extra="ignore",
     )
 
-    # ── LLM ──────────────────────────────────────────────────────────────────
-    anthropic_api_key: SecretStr = Field(..., description="Anthropic API key")
-    default_model: str = Field("claude-sonnet-4-6", alias="TINKER_DEFAULT_MODEL")
-    deep_rca_model: str = Field("claude-opus-4-6", alias="TINKER_DEEP_RCA_MODEL")
+    # ── LLM — provider keys (set the one(s) you use) ─────────────────────────
+    # LiteLLM picks up keys by name automatically.
+    anthropic_api_key: SecretStr | None = Field(None, description="Anthropic direct API key")
+    openrouter_api_key: SecretStr | None = Field(None, description="OpenRouter API key")
+    openai_api_key: SecretStr | None = Field(None, description="OpenAI API key")
+    groq_api_key: SecretStr | None = Field(None, description="Groq API key")
+    mistral_api_key: SecretStr | None = Field(None, description="Mistral API key")
+
+    # Model strings — any LiteLLM-compatible value:
+    #   anthropic/claude-sonnet-4-6
+    #   openrouter/anthropic/claude-opus-4-6
+    #   openrouter/openai/gpt-4o
+    #   groq/llama-3.1-70b-versatile
+    #   ollama/llama3
+    default_model: str = Field(
+        "anthropic/claude-sonnet-4-6", alias="TINKER_DEFAULT_MODEL"
+    )
+    deep_rca_model: str = Field(
+        "anthropic/claude-opus-4-6", alias="TINKER_DEEP_RCA_MODEL"
+    )
 
     # ── Active backend ────────────────────────────────────────────────────────
     # One of: cloudwatch | gcp | azure | grafana | datadog | elastic | otel

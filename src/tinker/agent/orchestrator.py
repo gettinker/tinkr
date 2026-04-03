@@ -1,4 +1,14 @@
-"""Core agent orchestration loop using Claude tool-use."""
+"""Core agent orchestration loop using LiteLLM (provider-agnostic).
+
+Supports any model string that LiteLLM understands:
+  anthropic/claude-sonnet-4-6
+  openrouter/anthropic/claude-opus-4-6
+  openrouter/openai/gpt-4o
+  groq/llama-3.1-70b-versatile
+  ollama/llama3
+
+Set TINKER_DEFAULT_MODEL and TINKER_DEEP_RCA_MODEL in your environment.
+"""
 
 from __future__ import annotations
 
@@ -7,9 +17,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator
 
-import anthropic
 import structlog
 
+from tinker.agent import llm
 from tinker.agent.guardrails import GuardRailChain, PendingApprovalError
 from tinker.agent.prompts import RCA_SYSTEM_PROMPT
 from tinker.agent.tools import TOOL_DEFINITIONS, ToolDispatcher
@@ -20,12 +30,11 @@ log = structlog.get_logger(__name__)
 
 # ── Data models ───────────────────────────────────────────────────────────────
 
-
 @dataclass
 class IncidentReport:
     incident_id: str
     service: str
-    severity: str  # critical | high | medium | low
+    severity: str          # critical | high | medium | low
     root_cause: str
     summary: str
     affected_services: list[str]
@@ -33,6 +42,7 @@ class IncidentReport:
     fix_diff: str | None = None
     timeline: list[str] = field(default_factory=list)
     evidence: list[str] = field(default_factory=list)
+    model_used: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict[str, Any]:
@@ -44,6 +54,7 @@ class IncidentReport:
             "summary": self.summary,
             "affected_services": self.affected_services,
             "suggested_fix": self.suggested_fix,
+            "model_used": self.model_used,
             "created_at": self.created_at.isoformat(),
         }
 
@@ -54,6 +65,7 @@ class AgentSession:
 
     session_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     service: str = ""
+    # OpenAI-format message history
     messages: list[dict[str, Any]] = field(default_factory=list)
     context: dict[str, Any] = field(default_factory=dict)
     incident_report: IncidentReport | None = None
@@ -67,25 +79,30 @@ class AgentSession:
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
-
 class Orchestrator:
-    """Runs the Claude agentic loop: prompt → tool calls → results → repeat."""
+    """Provider-agnostic agent loop via LiteLLM.
 
-    MAX_ITERATIONS = 20  # guard against infinite loops
+    The model is selected by config. All providers are supported as long as
+    they implement function/tool calling. Streaming and non-streaming paths
+    both work.
+    """
+
+    MAX_ITERATIONS = 20
 
     def __init__(
         self,
         dispatcher: ToolDispatcher | None = None,
         guardrails: GuardRailChain | None = None,
         use_deep_rca: bool = False,
+        model: str | None = None,
     ) -> None:
-        self._client = anthropic.Anthropic(
-            api_key=settings.anthropic_api_key.get_secret_value()
-        )
         self._guardrails = guardrails or GuardRailChain()
         self._dispatcher = dispatcher or ToolDispatcher(guardrails=self._guardrails)
-        self._model = settings.deep_rca_model if use_deep_rca else settings.default_model
+        self._model = model or (
+            settings.deep_rca_model if use_deep_rca else settings.default_model
+        )
         self._use_deep_rca = use_deep_rca
+        log.info("orchestrator.init", model=self._model)
 
     async def analyze(
         self,
@@ -93,7 +110,7 @@ class Orchestrator:
         since: str = "1h",
         session: AgentSession | None = None,
     ) -> IncidentReport:
-        """Run a full RCA analysis for a service. Returns a structured IncidentReport."""
+        """Run a full RCA analysis. Returns a structured IncidentReport."""
         if session is None:
             session = AgentSession(service=service)
 
@@ -103,12 +120,10 @@ class Orchestrator:
             "for anything related to the errors you find, and produce a full incident report "
             "with root cause, severity, and a suggested fix."
         )
-
         session.messages.append({"role": "user", "content": prompt})
         await self._run_loop(session)
 
-        # Build report from final assistant message
-        last_text = self._extract_last_text(session.messages)
+        last_text = self._last_text(session.messages)
         report = IncidentReport(
             incident_id=f"INC-{session.session_id}",
             service=service,
@@ -116,19 +131,16 @@ class Orchestrator:
             root_cause=last_text,
             summary=last_text[:200],
             affected_services=[service],
+            model_used=self._model,
         )
         session.incident_report = report
         return report
 
-    async def chat(
-        self,
-        user_message: str,
-        session: AgentSession,
-    ) -> str:
+    async def chat(self, user_message: str, session: AgentSession) -> str:
         """Send a follow-up message in an existing session."""
         session.messages.append({"role": "user", "content": user_message})
         await self._run_loop(session)
-        return self._extract_last_text(session.messages)
+        return self._last_text(session.messages)
 
     async def stream_analyze(
         self,
@@ -136,7 +148,7 @@ class Orchestrator:
         since: str = "1h",
         session: AgentSession | None = None,
     ) -> AsyncIterator[str]:
-        """Stream analysis progress text as the agent works."""
+        """Stream analysis tokens as the agent works."""
         if session is None:
             session = AgentSession(service=service)
 
@@ -145,113 +157,98 @@ class Orchestrator:
             "Think step by step, explain your reasoning as you query logs and code."
         )
         session.messages.append({"role": "user", "content": prompt})
-
         async for chunk in self._run_loop_streaming(session):
             yield chunk
 
-    # ── Internal loop ─────────────────────────────────────────────────────────
+    # ── Internal loop (non-streaming) ─────────────────────────────────────────
 
     async def _run_loop(self, session: AgentSession) -> None:
+        system = [{"role": "system", "content": RCA_SYSTEM_PROMPT}]
+
         for _ in range(self.MAX_ITERATIONS):
-            kwargs: dict[str, Any] = {
-                "model": self._model,
-                "max_tokens": 8192,
-                "system": RCA_SYSTEM_PROMPT,
-                "tools": TOOL_DEFINITIONS,
-                "messages": session.messages,
-            }
-            if self._use_deep_rca:
-                kwargs["thinking"] = {"type": "enabled", "budget_tokens": 8000}
+            response = llm.complete(
+                messages=system + session.messages,
+                model=self._model,
+                tools=TOOL_DEFINITIONS,
+                thinking=self._use_deep_rca,
+            )
 
-            response = self._client.messages.create(**kwargs)
-            session.messages.append({"role": "assistant", "content": response.content})
+            assistant_msg = llm.assistant_message_from_response(response)
+            session.messages.append(assistant_msg)
 
-            if response.stop_reason == "end_turn":
+            if not llm.is_tool_call(response):
                 break
 
-            if response.stop_reason == "tool_use":
-                tool_results = await self._process_tool_calls(response.content, session)
-                session.messages.append({"role": "user", "content": tool_results})
-            else:
-                log.warning("unexpected_stop_reason", reason=response.stop_reason)
-                break
+            tool_results = await self._process_tool_calls(response, session)
+            session.messages.extend(tool_results)
+
+    # ── Internal loop (streaming) ─────────────────────────────────────────────
 
     async def _run_loop_streaming(self, session: AgentSession) -> AsyncIterator[str]:
+        system = [{"role": "system", "content": RCA_SYSTEM_PROMPT}]
+
         for _ in range(self.MAX_ITERATIONS):
-            full_content: list[Any] = []
-            stop_reason: str | None = None
-
-            with self._client.messages.stream(
+            # Collect streamed text and detect tool calls at the end
+            collected_text = ""
+            async for chunk in llm.stream_complete(
+                messages=system + session.messages,
                 model=self._model,
-                max_tokens=8192,
-                system=RCA_SYSTEM_PROMPT,
                 tools=TOOL_DEFINITIONS,
-                messages=session.messages,
-            ) as stream:
-                for event in stream:
-                    if hasattr(event, "type"):
-                        if event.type == "content_block_delta":
-                            delta = getattr(event, "delta", None)
-                            if delta and hasattr(delta, "text"):
-                                yield delta.text
-                response = stream.get_final_message()
-                full_content = list(response.content)
-                stop_reason = response.stop_reason
+            ):
+                collected_text += chunk
+                yield chunk
 
-            session.messages.append({"role": "assistant", "content": full_content})
+            # After streaming, do a non-streaming call to get structured tool calls
+            # (most providers don't stream tool call arguments reliably)
+            if collected_text:
+                session.messages.append({"role": "assistant", "content": collected_text})
 
-            if stop_reason == "end_turn":
+            # Check if we need to continue with tool calls
+            check_response = llm.complete(
+                messages=system + session.messages,
+                model=self._model,
+                tools=TOOL_DEFINITIONS,
+            )
+            if not llm.is_tool_call(check_response):
                 break
 
-            if stop_reason == "tool_use":
-                tool_results = await self._process_tool_calls(full_content, session)
-                session.messages.append({"role": "user", "content": tool_results})
+            assistant_msg = llm.assistant_message_from_response(check_response)
+            session.messages.append(assistant_msg)
+            tool_results = await self._process_tool_calls(check_response, session)
+            session.messages.extend(tool_results)
+
+    # ── Tool call processing ──────────────────────────────────────────────────
 
     async def _process_tool_calls(
         self,
-        content_blocks: list[Any],
+        response: Any,
         session: AgentSession,
     ) -> list[dict[str, Any]]:
+        tool_calls = llm.extract_tool_calls(response)
         results = []
-        for block in content_blocks:
-            if block.type != "tool_use":
-                continue
-            tool_name: str = block.name
-            tool_input: dict[str, Any] = block.input
+
+        for tc in tool_calls:
+            tool_name: str = tc["name"]
+            tool_input: dict[str, Any] = tc["arguments"]
+            call_id: str = tc["id"]
 
             log.info("agent.tool_use", tool=tool_name, session=session.session_id)
             try:
                 result = await self._dispatcher.dispatch(tool_name, tool_input, session.context)
-                results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": str(result),
-                })
+                results.append(llm.tool_result_message(call_id, result))
             except PendingApprovalError as exc:
-                results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "is_error": True,
-                    "content": str(exc),
-                })
+                results.append(llm.tool_result_message(call_id, f"BLOCKED: {exc}"))
             except Exception as exc:
                 log.exception("agent.tool_error", tool=tool_name)
-                results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "is_error": True,
-                    "content": f"Tool error: {exc}",
-                })
+                results.append(llm.tool_result_message(call_id, f"ERROR: {exc}"))
+
         return results
 
     @staticmethod
-    def _extract_last_text(messages: list[dict[str, Any]]) -> str:
+    def _last_text(messages: list[dict[str, Any]]) -> str:
         for msg in reversed(messages):
-            if msg["role"] == "assistant":
-                content = msg["content"]
+            if msg.get("role") == "assistant":
+                content = msg.get("content")
                 if isinstance(content, str):
                     return content
-                for block in content:
-                    if hasattr(block, "type") and block.type == "text":
-                        return block.text
         return ""
