@@ -41,16 +41,18 @@ class LocalClient(TinkerClient):
         start: datetime,
         end: datetime,
         limit: int = 100,
+        resource_type: str | None = None,
     ) -> list[LogEntry]:
-        return await self._backend.query_logs(service, query, start, end, limit)
+        return await self._backend.query_logs(service, query, start, end, limit, resource_type=resource_type)
 
     async def tail_logs(
         self,
         service: str,
         query: str = "*",
         poll_interval: float = 2.0,
+        resource_type: str | None = None,
     ) -> AsyncGenerator[LogEntry, None]:
-        return self._backend.tail_logs(service, query, poll_interval)
+        return self._backend.tail_logs(service, query, poll_interval, resource_type=resource_type)
 
     async def get_metrics(
         self,
@@ -58,8 +60,9 @@ class LocalClient(TinkerClient):
         metric_name: str,
         start: datetime,
         end: datetime,
+        resource_type: str | None = None,
     ) -> list[MetricPoint]:
-        return await self._backend.get_metrics(service, metric_name, start, end)
+        return await self._backend.get_metrics(service, metric_name, start, end, resource_type=resource_type)
 
     async def detect_anomalies(
         self,

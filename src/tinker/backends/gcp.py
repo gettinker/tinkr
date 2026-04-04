@@ -30,6 +30,7 @@ class GCPBackend(ObservabilityBackend):
         start: datetime,
         end: datetime,
         limit: int = 100,
+        resource_type: str | None = None,
     ) -> list[LogEntry]:
         import asyncio
 
@@ -47,7 +48,7 @@ class GCPBackend(ObservabilityBackend):
         else:
             from tinker.query import parse_query, translate_for
             ast = parse_query(query)
-            base = translate_for("gcp", ast, service=service)
+            base = translate_for("gcp", ast, service=service, resource_type=resource_type)
             native_filter = (
                 f'{base} '
                 f'AND timestamp>="{start.isoformat()}" '
@@ -99,6 +100,7 @@ class GCPBackend(ObservabilityBackend):
         start: datetime,
         end: datetime,
         dimensions: dict[str, str] | None = None,
+        resource_type: str | None = None,
     ) -> list[MetricPoint]:
         import asyncio
 

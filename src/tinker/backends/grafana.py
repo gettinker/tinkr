@@ -84,12 +84,13 @@ class GrafanaBackend(ObservabilityBackend):
         start: datetime,
         end: datetime,
         limit: int = 100,
+        resource_type: str | None = None,
     ) -> list[LogEntry]:
         """Query Loki using LogQL.
 
         `query` is a Tinker unified query string (e.g. 'level:ERROR AND "timeout"').
-        It is translated to LogQL automatically. Raw LogQL (starting with '{') is
-        passed through unchanged for backwards compatibility.
+        `resource_type` adds infrastructure labels to the Loki stream selector.
+        Raw LogQL (starting with '{') is passed through unchanged.
         """
         if not self._loki_url:
             log.warning("grafana.loki_not_configured")
@@ -101,7 +102,7 @@ class GrafanaBackend(ObservabilityBackend):
         else:
             from tinker.query import parse_query, translate_for
             ast = parse_query(query)
-            logql = translate_for("grafana", ast, service=service)
+            logql = translate_for("grafana", ast, service=service, resource_type=resource_type)
 
         params = {
             "query": logql,
@@ -149,6 +150,7 @@ class GrafanaBackend(ObservabilityBackend):
         service: str,
         query: str = "*",
         poll_interval: float = 2.0,
+        resource_type: str | None = None,
     ) -> AsyncGenerator[LogEntry, None]:
         """Stream new log entries using Loki's websocket tail API.
 
@@ -156,13 +158,13 @@ class GrafanaBackend(ObservabilityBackend):
         """
         if not self._loki_url:
             log.warning("grafana.loki_not_configured — falling back to poll tail")
-            async for entry in super().tail_logs(service, query, poll_interval):
+            async for entry in super().tail_logs(service, query, poll_interval, resource_type=resource_type):
                 yield entry
             return
 
         from tinker.query import parse_query, translate_for
         ast = parse_query(query)
-        logql = translate_for("grafana", ast, service=service)
+        logql = translate_for("grafana", ast, service=service, resource_type=resource_type)
 
         # Convert http(s):// to ws(s):// for the websocket endpoint
         ws_base = self._loki_url.replace("https://", "wss://").replace("http://", "ws://")
@@ -215,7 +217,7 @@ class GrafanaBackend(ObservabilityBackend):
         except Exception as exc:
             log.warning("grafana.tail.websocket_failed", error=str(exc))
             log.info("grafana.tail.fallback_to_poll")
-            async for entry in super().tail_logs(service, query, poll_interval):
+            async for entry in super().tail_logs(service, query, poll_interval, resource_type=resource_type):
                 yield entry
 
     # ── Metrics via Prometheus ────────────────────────────────────────────────
@@ -227,6 +229,7 @@ class GrafanaBackend(ObservabilityBackend):
         start: datetime,
         end: datetime,
         dimensions: dict[str, str] | None = None,
+        resource_type: str | None = None,
     ) -> list[MetricPoint]:
         """Query Prometheus range query API."""
         if not self._prom_url:

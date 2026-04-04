@@ -32,7 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from tinker.query.ast import AndExpr, FieldFilter, NotExpr, OrExpr, QueryNode, TextFilter
-from tinker.query.resource import LOKI_LABELS, extract_resource
+from tinker.query.resource import LOKI_LABELS
 
 # Fields that map to Loki stream selector labels
 _LABEL_FIELDS = {"level", "service", "service_name", "app", "env", "namespace"}
@@ -61,8 +61,6 @@ def _collect(node: QueryNode, acc: _LogQL, negated: bool = False) -> None:
 
     elif isinstance(node, FieldFilter):
         fname = node.field
-        if fname == "resource":
-            return   # consumed by translate() — added to stream selector there
         if fname in _LABEL_FIELDS:
             if len(node.values) == 1:
                 if negated:
@@ -101,16 +99,15 @@ def _collect(node: QueryNode, acc: _LogQL, negated: bool = False) -> None:
         _collect(node.operand, acc, not negated)
 
 
-def translate(node: QueryNode, service: str) -> str:
+def translate(node: QueryNode, service: str, resource_type: str | None = None) -> str:
     """Return a complete LogQL query string for the given service."""
-    resource_type, stripped = extract_resource(node)
     acc = _LogQL()
-    _collect(stripped, acc)
+    _collect(node, acc)
 
     # Stream selector — start with service, add resource-specific labels
     stream: dict[str, str] = {_SERVICE_LABEL: service}
-    if resource_type and resource_type in LOKI_LABELS:
-        stream.update(LOKI_LABELS[resource_type])
+    if resource_type and resource_type.lower() in LOKI_LABELS:
+        stream.update(LOKI_LABELS[resource_type.lower()])
     # Promote exact label matches into the stream selector
     for k, v in acc.labels.items():
         if k in ("service", "service_name"):

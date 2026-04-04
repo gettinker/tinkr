@@ -107,14 +107,14 @@ tinker fix INC-abc123 --approve                      # apply fix and open a GitH
 tinker tail payments-api                             # all logs, live
 tinker tail payments-api -q 'level:ERROR'            # errors only
 tinker tail payments-api -q 'level:(ERROR OR WARN) AND "timeout"'
-tinker tail payments-api -q 'resource:ecs AND level:ERROR'
+tinker tail payments-api --resource ecs -q 'level:ERROR'
 
 # ── Fetch logs (no AI) ─────────────────────────────────────────────────────
 tinker logs payments-api                             # recent logs
 tinker logs payments-api -q 'level:ERROR' --since 30m
 tinker logs payments-api -q 'level:ERROR' --since 1h -n 200
-tinker logs payments-api -q 'resource:lambda AND "cold start"'
-tinker logs payments-api -q 'resource:rds AND level:ERROR AND "deadlock"'
+tinker logs payments-api --resource lambda -q '"cold start"'
+tinker logs payments-api --resource rds -q 'level:ERROR AND "deadlock"'
 
 # ── Metrics ────────────────────────────────────────────────────────────────
 tinker metrics payments-api Errors --since 2h
@@ -156,9 +156,15 @@ Field aliases: `severity` → `level`, `svc`/`app` → `service`, `msg` → `mes
 
 ### Targeting infrastructure resources
 
-`resource:TYPE` tells Tinker which infrastructure resource to query. Without it each backend auto-discovers or uses its default.
+Use `--resource TYPE` (or `-r TYPE`) to tell Tinker which infrastructure resource to query. Without it each backend auto-discovers or uses its default.
 
-| `resource:TYPE` | CloudWatch log group | GCP resource.type | Azure KQL table | Loki label | ES index |
+```bash
+tinker logs payments-api --resource ecs -q 'level:ERROR'
+tinker logs my-function --resource lambda -q '"cold start"'
+tinker tail payments-api --resource eks
+```
+
+| `--resource` | CloudWatch log group | GCP resource.type | Azure KQL table | Loki label | ES index |
 |---|---|---|---|---|---|
 | `lambda` | `/aws/lambda/{svc}` | `cloud_function` | `FunctionAppLogs` | `resource="lambda"` | `lambda-*` |
 | `ecs` | `/ecs/{svc}` | `cloud_run_revision` | `ContainerLog` | `resource="container"` | `ecs-*` |
@@ -171,7 +177,7 @@ Field aliases: `severity` → `level`, `svc`/`app` → `service`, `msg` → `mes
 | `appservice` | — | — | `AppServiceConsoleLogs` | `resource="container"` | `appservice-*` |
 | (none) | auto-discover | `cloud_run_revision` | `AppTraces` | — | `logs-*` |
 
-Cross-cloud aliases work — `resource:lambda` on GCP maps to `cloud_function`, `resource:ecs` on Azure maps to `ContainerLog`. You never rewrite queries when switching backends.
+Cross-cloud aliases work — `--resource lambda` on GCP maps to `cloud_function`, `--resource ecs` on Azure maps to `ContainerLog`. You never change flags when switching backends.
 
 ### How queries map to native syntax
 
@@ -179,7 +185,7 @@ Cross-cloud aliases work — `resource:lambda` on GCP maps to `cloud_function`, 
 |---|---|---|---|---|
 | `level:ERROR` | `level = 'ERROR'` | `{level="ERROR"}` | `severity="ERROR"` | `SeverityLevel == "Error"` |
 | `"timeout"` | `@message like /timeout/` | `\|= \`timeout\`` | `textPayload:"timeout"` | `Message contains "timeout"` |
-| `resource:ecs` | log group `/ecs/{svc}` | `{resource="container"}` | `resource.type="cloud_run_revision"` | table `ContainerLog` |
+| `--resource ecs` | log group `/ecs/{svc}` | `{resource="container"}` | `resource.type="cloud_run_revision"` | table `ContainerLog` |
 
 Raw native queries (LogQL `{...}`, Insights `| filter ...`, KQL `| where ...`) are accepted unchanged.
 

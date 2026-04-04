@@ -71,8 +71,17 @@ class ObservabilityBackend(ABC):
         start: datetime,
         end: datetime,
         limit: int = 100,
+        resource_type: str | None = None,
     ) -> list[LogEntry]:
-        """Run a provider-specific log query and return normalised entries."""
+        """Run a provider-specific log query and return normalised entries.
+
+        Args:
+            service:       Service / function / container name.
+            query:         Tinker unified query string (e.g. 'level:ERROR AND "timeout"').
+            resource_type: Infrastructure type — controls log group / table / index routing.
+                           Examples: "ecs", "lambda", "eks", "rds", "cloudrun", "aks".
+                           None → auto-discover or use backend default.
+        """
         ...
 
     @abstractmethod
@@ -83,6 +92,7 @@ class ObservabilityBackend(ABC):
         start: datetime,
         end: datetime,
         dimensions: dict[str, str] | None = None,
+        resource_type: str | None = None,
     ) -> list[MetricPoint]:
         """Fetch metric time-series data."""
         ...
@@ -103,6 +113,7 @@ class ObservabilityBackend(ABC):
         service: str,
         query: str = "*",
         poll_interval: float = 2.0,
+        resource_type: str | None = None,
     ) -> AsyncGenerator[LogEntry, None]:
         """Stream new log entries as they arrive.
 
@@ -111,12 +122,13 @@ class ObservabilityBackend(ABC):
         (e.g. Loki websocket) should override this.
         """
         seen: set[tuple[datetime, str]] = set()
-        # Seed with the last 5 seconds so we don't flood on startup
         cursor = datetime.now(timezone.utc) - timedelta(seconds=5)
 
         while True:
             now = datetime.now(timezone.utc)
-            entries = await self.query_logs(service, query, cursor, now, limit=200)
+            entries = await self.query_logs(
+                service, query, cursor, now, limit=200, resource_type=resource_type
+            )
             new_cursor = cursor
             for entry in sorted(entries, key=lambda e: e.timestamp):
                 key = (entry.timestamp, entry.message)

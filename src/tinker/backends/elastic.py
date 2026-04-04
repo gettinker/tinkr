@@ -33,6 +33,7 @@ class ElasticBackend(ObservabilityBackend):
         start: datetime,
         end: datetime,
         limit: int = 100,
+        resource_type: str | None = None,
     ) -> list[LogEntry]:
         log.debug("elastic.query_logs", service=service)
 
@@ -40,8 +41,8 @@ class ElasticBackend(ObservabilityBackend):
         from tinker.query.translators.elastic import resolve_index
 
         ast = parse_query(query)
-        query_dsl = translate_for("elastic", ast, service=service)
-        index = resolve_index(ast)
+        query_dsl = translate_for("elastic", ast, service=service, resource_type=resource_type)
+        index = resolve_index(resource_type)
 
         body: dict[str, Any] = {
             "size": limit,
@@ -92,6 +93,7 @@ class ElasticBackend(ObservabilityBackend):
         start: datetime,
         end: datetime,
         dimensions: dict[str, str] | None = None,
+        resource_type: str | None = None,
     ) -> list[MetricPoint]:
         """Use a date_histogram aggregation to compute a metric over time."""
         log.debug("elastic.get_metrics", service=service, metric=metric_name)

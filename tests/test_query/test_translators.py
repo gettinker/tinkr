@@ -211,91 +211,86 @@ class TestElastic:
 # ── Resource type routing ──────────────────────────────────────────────────────
 
 class TestResourceCloudWatch:
-    """resource:TYPE controls CloudWatch log group selection, not the filter."""
-    from tinker.query.translators.cloudwatch import resolve_log_groups
+    """--resource controls CloudWatch log group selection, not the query filter."""
 
-    def _resolve(self, q: str) -> list[str]:
+    def _resolve(self, resource_type: str | None) -> list[str]:
         from tinker.query.translators.cloudwatch import resolve_log_groups
-        return resolve_log_groups(parse_query(q), SVC)
+        return resolve_log_groups(resource_type, SVC)
 
-    def _t(self, q: str) -> str:
-        return translate_for("cloudwatch", parse_query(q), service=SVC)
+    def _t(self, q: str, resource_type: str | None = None) -> str:
+        return translate_for("cloudwatch", parse_query(q), service=SVC, resource_type=resource_type)
 
     def test_lambda_log_group(self):
-        assert self._resolve("resource:lambda") == [f"/aws/lambda/{SVC}"]
+        assert self._resolve("lambda") == [f"/aws/lambda/{SVC}"]
 
     def test_ecs_log_group(self):
-        assert self._resolve("resource:ecs") == [f"/ecs/{SVC}"]
+        assert self._resolve("ecs") == [f"/ecs/{SVC}"]
 
     def test_eks_log_group(self):
-        assert self._resolve("resource:eks") == [f"/aws/containerinsights/{SVC}/application"]
+        assert self._resolve("eks") == [f"/aws/containerinsights/{SVC}/application"]
 
     def test_ec2_log_group(self):
-        assert self._resolve("resource:ec2") == [f"/aws/ec2/{SVC}"]
+        assert self._resolve("ec2") == [f"/aws/ec2/{SVC}"]
 
     def test_rds_log_group(self):
-        assert self._resolve("resource:rds") == [f"/aws/rds/instance/{SVC}/postgresql"]
+        assert self._resolve("rds") == [f"/aws/rds/instance/{SVC}/postgresql"]
 
     def test_no_resource_auto_discover(self):
-        # No resource:TYPE → empty list signals auto-discover
-        assert self._resolve("level:ERROR") == []
+        # No resource_type → empty list signals auto-discover
+        assert self._resolve(None) == []
 
-    def test_resource_stripped_from_filter(self):
-        out = self._t("resource:lambda AND level:ERROR")
-        # resource:lambda should not appear as a filter clause
-        assert "resource" not in out
-        assert "lambda" not in out
+    def test_resource_type_does_not_affect_filter(self):
+        out = self._t("level:ERROR", resource_type="lambda")
         assert "level = 'ERROR'" in out
 
 
 class TestResourceGCP:
-    def _t(self, q: str) -> str:
-        return translate_for("gcp", parse_query(q), service=SVC)
+    def _t(self, q: str, resource_type: str | None = None) -> str:
+        return translate_for("gcp", parse_query(q), service=SVC, resource_type=resource_type)
 
     def test_cloudrun(self):
-        out = self._t("resource:cloudrun")
+        out = self._t("*", resource_type="cloudrun")
         assert 'resource.type="cloud_run_revision"' in out
         assert f'service_name="{SVC}"' in out
 
     def test_gke(self):
-        out = self._t("resource:gke")
+        out = self._t("*", resource_type="gke")
         assert 'resource.type="k8s_container"' in out
         assert f'container_name="{SVC}"' in out
 
     def test_gce(self):
-        out = self._t("resource:gce")
+        out = self._t("*", resource_type="gce")
         assert 'resource.type="gce_instance"' in out
 
     def test_resource_with_filter(self):
-        out = self._t('resource:cloudrun AND level:ERROR')
+        out = self._t("level:ERROR", resource_type="cloudrun")
         assert 'resource.type="cloud_run_revision"' in out
         assert 'severity="ERROR"' in out
 
-    def test_unknown_resource_passthrough(self):
-        out = self._t("resource:custom-type")
+    def test_no_resource_type(self):
+        out = self._t("level:ERROR")
         assert SVC in out
-        assert "custom-type" in out
 
 
 class TestResourceAzure:
-    def _t(self, q: str) -> str:
-        return translate_for("azure", parse_query(q), service=SVC)
+    def _t(self, q: str, resource_type: str | None = None) -> str:
+        return translate_for("azure", parse_query(q), service=SVC, resource_type=resource_type)
 
     def test_aks_uses_container_log(self):
-        out = self._t("resource:aks")
+        out = self._t("*", resource_type="aks")
         assert "ContainerLog" in out
         assert "AppTraces" not in out
 
     def test_vm_uses_syslog(self):
-        out = self._t("resource:vm")
+        out = self._t("*", resource_type="vm")
         assert "Syslog" in out
 
     def test_function_uses_function_app_logs(self):
-        out = self._t("resource:function")
+        out = self._t("*", resource_type="function")
         assert "FunctionAppLogs" in out
 
     def test_appservice(self):
-        out = self._t("resource:appservice")
+        out = self._t("*", resource_type="appservice")
         assert "AppServiceConsoleLogs" in out
 
     def test_default_app_traces(self):
@@ -303,27 +298,26 @@ class TestResourceAzure:
         assert "AppTraces" in out
 
     def test_resource_with_filter(self):
-        out = self._t('resource:aks AND level:ERROR')
+        out = self._t("level:ERROR", resource_type="aks")
         assert "ContainerLog" in out
-        # resource field should not appear as a where clause
-        assert "resource" not in out.split("| where")[1]
+        assert "Error" in out
 
 
 class TestResourceLoki:
-    def _t(self, q: str) -> str:
-        return translate_for("grafana", parse_query(q), service=SVC)
+    def _t(self, q: str, resource_type: str | None = None) -> str:
+        return translate_for("grafana", parse_query(q), service=SVC, resource_type=resource_type)
 
     def test_ecs_adds_resource_label(self):
-        out = self._t("resource:ecs")
+        out = self._t("*", resource_type="ecs")
         assert 'resource="container"' in out
         assert f'service="{SVC}"' in out
 
     def test_host_adds_resource_label(self):
-        out = self._t("resource:ec2")
+        out = self._t("*", resource_type="ec2")
         assert 'resource="host"' in out
 
     def test_resource_with_level(self):
-        out = self._t('resource:ecs AND level:ERROR')
+        out = self._t("level:ERROR", resource_type="ecs")
         assert 'resource="container"' in out
         assert 'level="ERROR"' in out
 
@@ -333,39 +327,39 @@ class TestResourceLoki:
 
 
 class TestResourceElastic:
-    def _t(self, q: str) -> dict:
-        return translate_for("elastic", parse_query(q), service=SVC)
+    def _t(self, q: str, resource_type: str | None = None) -> dict:
+        return translate_for("elastic", parse_query(q), service=SVC, resource_type=resource_type)
 
-    def _index(self, q: str) -> str:
+    def _index(self, resource_type: str | None) -> str:
         from tinker.query.translators.elastic import resolve_index
-        return resolve_index(parse_query(q))
+        return resolve_index(resource_type)
 
     def test_lambda_index(self):
-        assert self._index("resource:lambda") == "lambda-*"
+        assert self._index("lambda") == "lambda-*"
 
     def test_eks_index(self):
-        assert self._index("resource:eks") == "kubernetes-*"
+        assert self._index("eks") == "kubernetes-*"
 
     def test_default_index(self):
-        assert self._index("level:ERROR") == "logs-*"
+        assert self._index(None) == "logs-*"
 
-    def test_resource_not_in_query(self):
-        out = self._t("resource:lambda AND level:ERROR")
-        # resource field should not produce a term filter
+    def test_resource_type_does_not_affect_query_body(self):
+        out = self._t("level:ERROR", resource_type="lambda")
         assert "resource" not in str(out)
+        assert "log.level" in str(out)
 
 
 class TestResourceDatadog:
-    def _t(self, q: str) -> str:
-        return translate_for("datadog", parse_query(q), service=SVC)
+    def _t(self, q: str, resource_type: str | None = None) -> str:
+        return translate_for("datadog", parse_query(q), service=SVC, resource_type=resource_type)
 
-    def test_resource_stripped(self):
-        out = self._t("resource:ecs AND level:ERROR")
+    def test_resource_type_ignored_in_query(self):
+        out = self._t("level:ERROR", resource_type="ecs")
         assert "resource" not in out
         assert "status:error" in out
         assert f"service:{SVC}" in out
 
-    def test_resource_only(self):
-        out = self._t("resource:lambda")
+    def test_wildcard_with_resource_type(self):
+        out = self._t("*", resource_type="lambda")
         assert "resource" not in out
         assert f"service:{SVC}" in out

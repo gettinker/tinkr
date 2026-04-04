@@ -74,11 +74,13 @@ class DatadogBackend(ObservabilityBackend):
         start: datetime,
         end: datetime,
         limit: int = 100,
+        resource_type: str | None = None,
     ) -> list[LogEntry]:
         """Search Datadog logs using the Logs Search API v2.
 
         `query` is a Tinker unified query string (e.g. 'level:ERROR AND "timeout"').
         Raw Datadog queries (starting with '@' or 'service:') are passed through.
+        `resource_type` is accepted for API consistency but is not used by Datadog.
         """
         log.debug("datadog.query_logs", service=service)
 
@@ -151,6 +153,7 @@ class DatadogBackend(ObservabilityBackend):
         start: datetime,
         end: datetime,
         dimensions: dict[str, str] | None = None,
+        resource_type: str | None = None,
     ) -> list[MetricPoint]:
         """Fetch a Datadog metric timeseries.
 

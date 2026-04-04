@@ -86,15 +86,19 @@ class RemoteClient(TinkerClient):
         start: datetime,
         end: datetime,
         limit: int = 100,
+        resource_type: str | None = None,
     ) -> list[LogEntry]:
+        body: dict = {
+            "service": service,
+            "query": query,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "limit": limit,
+        }
+        if resource_type:
+            body["resource_type"] = resource_type
         async with self._client() as c:
-            resp = await c.post("/api/v1/logs", json={
-                "service": service,
-                "query": query,
-                "start": start.isoformat(),
-                "end": end.isoformat(),
-                "limit": limit,
-            })
+            resp = await c.post("/api/v1/logs", json=body)
             resp.raise_for_status()
         return [_parse_log_entry(e) for e in resp.json().get("entries", [])]
 
@@ -103,6 +107,7 @@ class RemoteClient(TinkerClient):
         service: str,
         query: str = "*",
         poll_interval: float = 2.0,
+        resource_type: str | None = None,
     ) -> AsyncGenerator[LogEntry, None]:
         """Poll the server's query endpoint for new entries."""
         import asyncio
@@ -114,7 +119,7 @@ class RemoteClient(TinkerClient):
         while True:
             now = datetime.now(timezone.utc)
             try:
-                entries = await self.query_logs(service, query, cursor, now, limit=200)
+                entries = await self.query_logs(service, query, cursor, now, limit=200, resource_type=resource_type)
                 for entry in sorted(entries, key=lambda e: e.timestamp):
                     key = (entry.timestamp, entry.message)
                     if key not in seen:
@@ -131,14 +136,18 @@ class RemoteClient(TinkerClient):
         metric_name: str,
         start: datetime,
         end: datetime,
+        resource_type: str | None = None,
     ) -> list[MetricPoint]:
+        body: dict = {
+            "service": service,
+            "metric": metric_name,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+        }
+        if resource_type:
+            body["resource_type"] = resource_type
         async with self._client() as c:
-            resp = await c.post("/api/v1/metrics", json={
-                "service": service,
-                "metric": metric_name,
-                "start": start.isoformat(),
-                "end": end.isoformat(),
-            })
+            resp = await c.post("/api/v1/metrics", json=body)
             resp.raise_for_status()
         return [_parse_metric_point(p) for p in resp.json().get("points", [])]
 

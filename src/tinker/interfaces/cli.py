@@ -141,15 +141,17 @@ def logs(
     query: str = typer.Option("*", "--query", "-q", help="Log query string"),
     since: str = typer.Option("30m", "--since", "-s"),
     limit: int = typer.Option(50, "--limit", "-n"),
+    resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type: ecs, lambda, eks, rds, cloudrun, aks, aca"),
 ) -> None:
     """[bold cyan]Tail raw logs for a service (no AI analysis).[/bold cyan]
 
     Examples:
 
       tinker logs payments-api
-      tinker logs auth-service --query "level:ERROR" --since 1h
+      tinker logs payments-api --resource ecs -q "level:ERROR" --since 1h
+      tinker logs my-fn --resource lambda
     """
-    asyncio.run(_logs(service, query, since, limit))
+    asyncio.run(_logs(service, query, since, limit, resource))
 
 
 @app.command()
@@ -157,6 +159,7 @@ def tail(
     service: str = typer.Argument(..., help="Service name"),
     query: str = typer.Option("*", "--query", "-q", help="Filter query (unified syntax)"),
     poll: float = typer.Option(2.0, "--poll", "-p", help="Poll interval in seconds (poll-based backends)"),
+    resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type: ecs, lambda, eks, rds, cloudrun, aks, aca"),
 ) -> None:
     """[bold cyan]Stream live logs for a service (Ctrl-C to stop).[/bold cyan]
 
@@ -166,10 +169,10 @@ def tail(
     Examples:
 
       tinker tail payments-api
-      tinker tail payments-api --query "level:ERROR"
+      tinker tail payments-api --resource ecs -q "level:ERROR"
       tinker tail auth-service -q 'level:(ERROR OR WARN) AND "timeout"'
     """
-    asyncio.run(_tail(service, query, poll))
+    asyncio.run(_tail(service, query, poll, resource))
 
 
 @app.command()
@@ -177,15 +180,17 @@ def metrics(
     service: str = typer.Argument(..., help="Service name"),
     metric: str = typer.Argument(..., help="Metric name"),
     since: str = typer.Option("1h", "--since", "-s"),
+    resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type: ecs, lambda, eks, rds, cloudrun, aks, aca"),
 ) -> None:
     """[bold cyan]Show metric values for a service.[/bold cyan]
 
     Examples:
 
       tinker metrics payments-api Errors
+      tinker metrics payments-api Errors --resource ecs
       tinker metrics auth-service http_requests_total --since 2h
     """
-    asyncio.run(_metrics(service, metric, since))
+    asyncio.run(_metrics(service, metric, since, resource))
 
 
 @app.command()
@@ -377,13 +382,13 @@ async def _fix(incident_id: str, approve: bool) -> None:
         console.print("[dim]Re-run with --approve to apply.[/dim]")
 
 
-async def _logs(service: str, query: str, since: str, limit: int) -> None:
+async def _logs(service: str, query: str, since: str, limit: int, resource_type: str | None = None) -> None:
     client = _get_client()
     end = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
     start = client.parse_since(since)
 
     with console.status("Querying..."):
-        entries = await client.query_logs(service, query, start, end, limit)
+        entries = await client.query_logs(service, query, start, end, limit, resource_type=resource_type)
 
     if not entries:
         console.print("[dim]No log entries found.[/dim]")
@@ -405,19 +410,20 @@ async def _logs(service: str, query: str, since: str, limit: int) -> None:
     console.print(table)
 
 
-async def _tail(service: str, query: str, poll: float) -> None:
+async def _tail(service: str, query: str, poll: float, resource_type: str | None = None) -> None:
     client = _get_client()
     level_styles = {"ERROR": "red", "CRITICAL": "bold red", "WARN": "yellow", "WARNING": "yellow", "INFO": "green", "DEBUG": "dim"}
 
     console.print(
         f"[bold green]Tailing[/bold green] [cyan]{service}[/cyan]"
         + (f" · [dim]{query}[/dim]" if query != "*" else "")
+        + (f" · [dim]{resource_type}[/dim]" if resource_type else "")
         + f"  [dim]({client.mode} mode · Ctrl-C to stop)[/dim]"
     )
     console.print()
 
     try:
-        async for entry in await client.tail_logs(service, query, poll_interval=poll):
+        async for entry in await client.tail_logs(service, query, poll_interval=poll, resource_type=resource_type):
             style = level_styles.get(entry.level.upper(), "white")
             ts = entry.timestamp.strftime("%H:%M:%S")
             level = f"[{style}]{entry.level:<8}[/{style}]"
@@ -426,13 +432,13 @@ async def _tail(service: str, query: str, poll: float) -> None:
         console.print("\n[dim]Stopped.[/dim]")
 
 
-async def _metrics(service: str, metric: str, since: str) -> None:
+async def _metrics(service: str, metric: str, since: str, resource_type: str | None = None) -> None:
     client = _get_client()
     end = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
     start = client.parse_since(since)
 
     with console.status("Querying..."):
-        points = await client.get_metrics(service, metric, start, end)
+        points = await client.get_metrics(service, metric, start, end, resource_type=resource_type)
 
     if not points:
         console.print("[dim]No metric data found.[/dim]")

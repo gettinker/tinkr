@@ -13,7 +13,7 @@ resource:TYPE controls which KQL table is queried:
 from __future__ import annotations
 
 from tinker.query.ast import AndExpr, FieldFilter, NotExpr, OrExpr, QueryNode, TextFilter
-from tinker.query.resource import AZURE_TABLE, extract_resource
+from tinker.query.resource import AZURE_TABLE
 
 _SEVERITY_MAP: dict[str, str] = {
     "debug":       "Verbose",
@@ -59,8 +59,6 @@ def translate(node: QueryNode, field_map: dict[str, str]) -> str:
         return f'{msg_col} {op} "{node.text}"'
 
     if isinstance(node, FieldFilter):
-        if node.field == "resource":
-            return ""   # consumed by to_kql_where()
         kql_field = field_map.get(node.field, node.field)
         values = (
             [_kql_severity(v) for v in node.values]
@@ -88,18 +86,12 @@ def translate(node: QueryNode, field_map: dict[str, str]) -> str:
     raise TypeError(f"Unknown node type: {type(node)}")
 
 
-def to_kql_where(node: QueryNode, service: str) -> str:
+def to_kql_where(node: QueryNode, service: str, resource_type: str | None = None) -> str:
     """Return a complete KQL query with the correct table and service filter."""
-    resource_type, stripped = extract_resource(node)
-
-    # Resolve table
-    table = "AppTraces"
-    if resource_type:
-        table = AZURE_TABLE.get(resource_type, "AppTraces")
-
+    table = AZURE_TABLE.get(resource_type.lower(), "AppTraces") if resource_type else "AppTraces"
     field_map = _get_field_map(table)
     svc_col   = field_map.get("service", "ServiceName")
-    expr      = translate(stripped, field_map)
+    expr      = translate(node, field_map)
 
     service_clause = f'{svc_col} == "{service}"'
     where_clause   = f"{service_clause} and ({expr})" if expr else service_clause

@@ -25,6 +25,7 @@ class TinkerClient(ABC):
         start: datetime,
         end: datetime,
         limit: int = 100,
+        resource_type: str | None = None,
     ) -> list[LogEntry]: ...
 
     @abstractmethod
@@ -33,6 +34,7 @@ class TinkerClient(ABC):
         service: str,
         query: str = "*",
         poll_interval: float = 2.0,
+        resource_type: str | None = None,
     ) -> AsyncGenerator[LogEntry, None]: ...
 
     @abstractmethod
@@ -42,6 +44,7 @@ class TinkerClient(ABC):
         metric_name: str,
         start: datetime,
         end: datetime,
+        resource_type: str | None = None,
     ) -> list[MetricPoint]: ...
 
     @abstractmethod

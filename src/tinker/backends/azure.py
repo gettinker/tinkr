@@ -70,10 +70,12 @@ class AzureBackend(ObservabilityBackend):
         start: datetime,
         end: datetime,
         limit: int = 100,
+        resource_type: str | None = None,
     ) -> list[LogEntry]:
         """Run a KQL query against the configured Log Analytics workspace.
 
         `query` is a Tinker unified query string (e.g. 'level:ERROR AND "timeout"').
+        `resource_type` controls which KQL table is queried (aks, aca, appservice, etc.).
         Raw KQL (containing '|' or KQL keywords) is passed through unchanged.
         """
         from azure.monitor.query import LogsQueryStatus
@@ -86,7 +88,7 @@ class AzureBackend(ObservabilityBackend):
         else:
             from tinker.query import parse_query, translate_for
             ast = parse_query(query)
-            kql = translate_for("azure", ast, service=service) + f" | take {limit}"
+            kql = translate_for("azure", ast, service=service, resource_type=resource_type) + f" | take {limit}"
 
         timespan = (end - start)
 
@@ -151,6 +153,7 @@ class AzureBackend(ObservabilityBackend):
         start: datetime,
         end: datetime,
         dimensions: dict[str, str] | None = None,
+        resource_type: str | None = None,
     ) -> list[MetricPoint]:
         """Fetch Azure Monitor metrics for a resource.
 

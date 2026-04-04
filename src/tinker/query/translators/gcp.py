@@ -1,18 +1,18 @@
 """Translate a Tinker QueryNode to a GCP Cloud Logging filter string.
 
-resource:TYPE controls the resource.type filter:
-    resource:cloudrun  → resource.type="cloud_run_revision"
-    resource:gke       → resource.type="k8s_container"
-    resource:gce       → resource.type="gce_instance"
-    resource:cloudfn   → resource.type="cloud_function"
-    resource:appengine → resource.type="gae_app"
-    (no resource)      → resource.labels.service_name="{service}" (Cloud Run default)
+resource_type controls the resource.type filter:
+    "cloudrun"  → resource.type="cloud_run_revision"
+    "gke"       → resource.type="k8s_container"
+    "gce"       → resource.type="gce_instance"
+    "cloudfn"   → resource.type="cloud_function"
+    "appengine" → resource.type="gae_app"
+    None        → resource.labels.service_name="{service}" (Cloud Run default)
 """
 
 from __future__ import annotations
 
 from tinker.query.ast import AndExpr, FieldFilter, NotExpr, OrExpr, QueryNode, TextFilter
-from tinker.query.resource import GCP_RESOURCE, extract_resource
+from tinker.query.resource import GCP_RESOURCE
 
 _SEVERITY_MAP: dict[str, str] = {
     "debug":    "DEBUG",
@@ -49,8 +49,6 @@ def translate(node: QueryNode) -> str:
         return f'textPayload:"{node.text}"'
 
     if isinstance(node, FieldFilter):
-        if node.field == "resource":
-            return ""   # consumed by to_filter()
         gcp_field = _gcp_field(node.field)
         values = (
             [_gcp_severity(v) for v in node.values]
@@ -79,27 +77,25 @@ def translate(node: QueryNode) -> str:
     raise TypeError(f"Unknown node type: {type(node)}")
 
 
-def to_filter(node: QueryNode, service: str) -> str:
+def to_filter(node: QueryNode, service: str, resource_type: str | None = None) -> str:
     """Return a complete GCP Cloud Logging filter including resource and service."""
-    resource_type, stripped = extract_resource(node)
-
-    if resource_type and resource_type in GCP_RESOURCE:
-        rtype, label_key = GCP_RESOURCE[resource_type]
+    if resource_type and resource_type.lower() in GCP_RESOURCE:
+        rtype, label_key = GCP_RESOURCE[resource_type.lower()]
         resource_clause = (
             f'resource.type="{rtype}" AND '
             f'resource.labels.{label_key}="{service}"'
         )
+    elif resource_type:
+        # Unknown type — best-effort pass-through
+        resource_clause = (
+            f'resource.labels.service_name="{service}" AND '
+            f'resource.type="{resource_type}"'
+        )
     else:
         # Default: Cloud Run / generic service label
         resource_clause = f'resource.labels.service_name="{service}"'
-        if resource_type and resource_type not in GCP_RESOURCE:
-            # Unknown type — best-effort pass-through
-            resource_clause = (
-                f'resource.labels.service_name="{service}" AND '
-                f'resource.type="{resource_type}"'
-            )
 
-    expr = translate(stripped)
+    expr = translate(node)
     if not expr:
         return resource_clause
     return f"{resource_clause} AND ({expr})"

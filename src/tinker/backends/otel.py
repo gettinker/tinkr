@@ -78,6 +78,7 @@ class OTelBackend(ObservabilityBackend):
         start: datetime,
         end: datetime,
         limit: int = 100,
+        resource_type: str | None = None,
     ) -> list[LogEntry]:
         """Query OpenSearch using OpenTelemetry semantic conventions.
 
@@ -166,6 +167,7 @@ class OTelBackend(ObservabilityBackend):
         start: datetime,
         end: datetime,
         dimensions: dict[str, str] | None = None,
+        resource_type: str | None = None,
     ) -> list[MetricPoint]:
         """Query Prometheus using the HTTP API range query endpoint.
 

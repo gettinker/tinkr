@@ -38,30 +38,29 @@ class CloudWatchBackend(ObservabilityBackend):
         start: datetime,
         end: datetime,
         limit: int = 100,
+        resource_type: str | None = None,
     ) -> list[LogEntry]:
         """Run a CloudWatch Logs Insights query.
 
         `query` is a Tinker unified query string (e.g. 'level:ERROR AND "timeout"').
-        resource:TYPE in the query controls which log group is targeted:
-            resource:lambda  → /aws/lambda/{service}
-            resource:ecs     → /ecs/{service}
-            resource:eks     → /aws/containerinsights/{service}/application
-            (no resource)    → auto-discover via describe_log_groups
+        `resource_type` controls which log group is targeted:
+            lambda  → /aws/lambda/{service}
+            ecs     → /ecs/{service}
+            eks     → /aws/containerinsights/{service}/application
+            None    → auto-discover via describe_log_groups
         Raw Insights queries (containing '|') are passed through unchanged.
         """
         from tinker.query import parse_query, translate_for
         from tinker.query.translators.cloudwatch import resolve_log_groups
 
         if "|" in query or query == "*":
-            # Raw Insights query — pass through, use Lambda path as default
             insights_query = query
-            ast = None
         else:
             ast = parse_query(query)
             insights_query = translate_for("cloudwatch", ast, service=service)
 
         # Resolve which log group(s) to target
-        log_groups: list[str] = resolve_log_groups(ast, service) if ast else []
+        log_groups: list[str] = resolve_log_groups(resource_type, service)
         if not log_groups:
             # Auto-discover: find all log groups whose name contains the service name
             log.debug("cloudwatch.auto_discover_log_groups", service=service)
@@ -132,6 +131,7 @@ class CloudWatchBackend(ObservabilityBackend):
         start: datetime,
         end: datetime,
         dimensions: dict[str, str] | None = None,
+        resource_type: str | None = None,
     ) -> list[MetricPoint]:
         dims = [{"Name": k, "Value": v} for k, v in (dimensions or {}).items()]
         log.debug("cloudwatch.get_metrics", service=service, metric=metric_name)

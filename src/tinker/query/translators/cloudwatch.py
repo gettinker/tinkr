@@ -1,13 +1,13 @@
 """Translate a Tinker QueryNode to a CloudWatch Logs Insights query string.
 
-resource:TYPE controls which log group is queried:
-    resource:lambda  → /aws/lambda/{service}
-    resource:ecs     → /ecs/{service}
-    resource:eks     → /aws/containerinsights/{service}/application
-    resource:ec2     → /aws/ec2/{service}
-    resource:apigw   → API-Gateway-Execution-Logs_{service}/prod
-    resource:rds     → /aws/rds/instance/{service}/postgresql
-    (no resource)    → auto-discover via describe_log_groups
+resource_type controls which log group is queried:
+    "lambda"  → /aws/lambda/{service}
+    "ecs"     → /ecs/{service}
+    "eks"     → /aws/containerinsights/{service}/application
+    "ec2"     → /aws/ec2/{service}
+    "apigw"   → API-Gateway-Execution-Logs_{service}/prod
+    "rds"     → /aws/rds/instance/{service}/postgresql
+    None      → auto-discover via describe_log_groups
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 
 from tinker.query.ast import AndExpr, FieldFilter, NotExpr, OrExpr, QueryNode, TextFilter
-from tinker.query.resource import CW_LOG_GROUP, extract_resource
+from tinker.query.resource import CW_LOG_GROUP
 
 # Map canonical Tinker field names → CloudWatch Insights field names
 _FIELD_MAP: dict[str, str] = {
@@ -32,10 +32,7 @@ def _cw_field(name: str) -> str:
 
 
 def translate(node: QueryNode) -> str:
-    """Return a CloudWatch Logs Insights filter expression (no leading `| filter`).
-
-    resource:TYPE nodes are ignored here — they are consumed by resolve_log_groups().
-    """
+    """Return a CloudWatch Logs Insights filter expression (no leading `| filter`)."""
     if isinstance(node, TextFilter):
         if node.text == "*":
             return "1 = 1"
@@ -45,8 +42,6 @@ def translate(node: QueryNode) -> str:
         return f"@message like /{escaped}/"
 
     if isinstance(node, FieldFilter):
-        if node.field == "resource":
-            return "1 = 1"   # consumed elsewhere
         field = _cw_field(node.field)
         if len(node.values) == 1:
             return f"{field} = '{node.values[0]}'"
@@ -55,7 +50,6 @@ def translate(node: QueryNode) -> str:
 
     if isinstance(node, AndExpr):
         l, r = translate(node.left), translate(node.right)
-        # Collapse trivially true clauses
         if l == "1 = 1": return r
         if r == "1 = 1": return l
         return f"({l}) AND ({r})"
@@ -69,17 +63,16 @@ def translate(node: QueryNode) -> str:
     raise TypeError(f"Unknown node type: {type(node)}")
 
 
-def resolve_log_groups(node: QueryNode, service: str) -> list[str]:
-    """Return the list of log group name(s) to query for this service + resource.
+def resolve_log_groups(resource_type: str | None, service: str) -> list[str]:
+    """Return the list of log group name(s) to query for this service + resource type.
 
     Returns an empty list when auto-discovery should be used (caller should
     call describe_log_groups with the service name as pattern).
     """
-    resource_type, _ = extract_resource(node)
     if resource_type is None:
         return []   # signal: auto-discover
 
-    pattern = CW_LOG_GROUP.get(resource_type)
+    pattern = CW_LOG_GROUP.get(resource_type.lower())
     if pattern:
         return [pattern.format(service=service)]
 
@@ -88,19 +81,9 @@ def resolve_log_groups(node: QueryNode, service: str) -> list[str]:
 
 
 def to_insights_query(node: QueryNode, service: str) -> str:
-    """Return a complete CloudWatch Logs Insights query string.
-
-    The resource:TYPE node is stripped before building the filter expression
-    since it controls log group selection, not the Insights filter itself.
-    """
-    _, stripped = extract_resource(node)
-    filter_expr = translate(stripped)
-
-    if filter_expr == "1 = 1":
-        combined = "1 = 1"
-    else:
-        combined = filter_expr
-
+    """Return a complete CloudWatch Logs Insights query string."""
+    filter_expr = translate(node)
+    combined = filter_expr if filter_expr != "1 = 1" else "1 = 1"
     return (
         "fields @timestamp, @message, level, service, traceId\n"
         f"| filter {combined}\n"
