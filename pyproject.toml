@@ -47,7 +47,6 @@ dependencies = [
 
 [project.scripts]
 tinker                = "tinker.interfaces.cli:app"
-tinker-server         = "tinker.server.app:main"
 tinker-cloudwatch-mcp = "tinker.mcp_servers.cloudwatch_server:main"
 tinker-elastic-mcp    = "tinker.mcp_servers.elastic_server:main"
 tinker-github-mcp     = "tinker.mcp_servers.github_server:main"

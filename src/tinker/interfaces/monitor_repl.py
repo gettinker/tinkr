@@ -44,7 +44,7 @@ from tinker.backends.base import Anomaly
 from tinker.monitor.summarizer import build_explain_context
 
 if TYPE_CHECKING:
-    from tinker.backends.base import ObservabilityBackend
+    from tinker.client.remote import RemoteClient
 
 log = structlog.get_logger(__name__)
 console = Console()
@@ -78,13 +78,13 @@ class MonitorREPL:
     def __init__(
         self,
         service: str,
-        backend: ObservabilityBackend,
+        client: "RemoteClient",
         window_minutes: int = 60,
         model: str | None = None,
         repo_path: str | None = None,
     ) -> None:
         self._service = service
-        self._backend = backend
+        self._client = client
         self._window = window_minutes
         self._model = model or _default_model()
         self._repo_path = repo_path or _find_repo()
@@ -160,7 +160,7 @@ class MonitorREPL:
     async def _do_refresh(self) -> None:
         with console.status(f"[bold green]Fetching anomalies for {self._service}...[/bold green]"):
             try:
-                self._anomalies = await self._backend.detect_anomalies(
+                self._anomalies = await self._client.detect_anomalies(
                     self._service, window_minutes=self._window
                 )
             except Exception as exc:

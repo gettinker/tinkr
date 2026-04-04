@@ -1,9 +1,9 @@
-"""SQLite persistence for interactive sessions and background watch state.
+"""SQLite persistence for interactive sessions and server-side watch state.
 
 Schema
 ------
 sessions  — REPL session context (anomalies, current focus, pending fix)
-watches   — Background watch daemons (PID, service, Slack channel, last run)
+watches   — Watch tasks managed by the server (no PID — asyncio tasks, not processes)
 
 Location: ~/.tinker/tinker.db  (overridable via TINKER_DB_PATH)
 """
@@ -11,7 +11,6 @@ Location: ~/.tinker/tinker.db  (overridable via TINKER_DB_PATH)
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -39,7 +38,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS watches (
     watch_id          TEXT PRIMARY KEY,
     service           TEXT NOT NULL,
-    pid               INTEGER NOT NULL,
     started_at        TEXT NOT NULL,
     slack_channel     TEXT,
     last_run_at       TEXT,
@@ -51,11 +49,10 @@ CREATE TABLE IF NOT EXISTS watches (
 
 
 class TinkerDB:
-    """SQLite-backed store for Tinker session and watch daemon state.
+    """SQLite-backed store for Tinker session and watch state.
 
-    Thread-safe for the common case of one writer at a time (CLI process).
     Uses ``check_same_thread=False`` because asyncio may call from a thread
-    pool executor.
+    pool executor on the server.
     """
 
     def __init__(self, db_path: Path | str | None = None) -> None:
@@ -75,7 +72,6 @@ class TinkerDB:
     # ── Sessions ──────────────────────────────────────────────────────────────
 
     def create_session(self, service: str, anomalies: list[dict]) -> str:
-        """Persist a new REPL session and return its session_id."""
         session_id = f"sess-{uuid.uuid4().hex[:8]}"
         now = _now()
         self._conn.execute(
@@ -112,7 +108,6 @@ class TinkerDB:
         self._conn.commit()
 
     def clean_sessions(self, older_than_hours: int = 24) -> int:
-        """Delete sessions older than *older_than_hours*. Returns count removed."""
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=older_than_hours)).isoformat()
         cur = self._conn.execute("DELETE FROM sessions WHERE created_at < ?", (cutoff,))
         self._conn.commit()
@@ -122,18 +117,16 @@ class TinkerDB:
 
     def create_watch(
         self,
+        watch_id: str,
         service: str,
-        pid: int,
         slack_channel: str | None = None,
         interval_seconds: int = 60,
     ) -> str:
-        """Register a new background watch daemon. Returns watch_id."""
-        watch_id = f"watch-{uuid.uuid4().hex[:8]}"
         self._conn.execute(
             "INSERT INTO watches"
-            " (watch_id, service, pid, started_at, slack_channel, interval_seconds)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (watch_id, service, pid, _now(), slack_channel, interval_seconds),
+            " (watch_id, service, started_at, slack_channel, interval_seconds)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (watch_id, service, _now(), slack_channel, interval_seconds),
         )
         self._conn.commit()
         return watch_id
@@ -144,11 +137,16 @@ class TinkerDB:
         ).fetchone()
         return dict(row) if row else None
 
-    def list_watches(self, status: str = "running") -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT * FROM watches WHERE status = ? ORDER BY started_at DESC",
-            (status,),
-        ).fetchall()
+    def list_watches(self, status: str | None = None) -> list[dict]:
+        if status:
+            rows = self._conn.execute(
+                "SELECT * FROM watches WHERE status = ? ORDER BY started_at DESC",
+                (status,),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM watches ORDER BY started_at DESC"
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def update_watch(self, watch_id: str, **kwargs: Any) -> None:
@@ -160,44 +158,21 @@ class TinkerDB:
         self._conn.commit()
 
     def stop_watch(self, watch_id: str) -> bool:
-        """Signal the watch process to stop. Returns True if signal was sent."""
         row = self._conn.execute(
-            "SELECT pid FROM watches WHERE watch_id = ? AND status = 'running'",
+            "SELECT watch_id FROM watches WHERE watch_id = ? AND status = 'running'",
             (watch_id,),
         ).fetchone()
         if not row:
             return False
-        try:
-            import signal
-            os.kill(row["pid"], signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            pass
         self.update_watch(watch_id, status="stopped")
         return True
 
     def clean_watches(self) -> int:
-        """Remove stopped watches and those whose PID is dead. Returns count removed."""
-        dead: list[str] = []
-        for row in self._conn.execute(
-            "SELECT watch_id, pid FROM watches WHERE status = 'running'"
-        ).fetchall():
-            try:
-                os.kill(row["pid"], 0)  # signal 0 = existence check only
-            except (ProcessLookupError, PermissionError):
-                dead.append(row["watch_id"])
-
-        if dead:
-            placeholders = ",".join("?" * len(dead))
-            self._conn.execute(
-                f"UPDATE watches SET status = 'dead' WHERE watch_id IN ({placeholders})",
-                dead,
-            )
-
         cur = self._conn.execute(
             "DELETE FROM watches WHERE status IN ('stopped', 'dead')"
         )
         self._conn.commit()
-        return len(dead) + cur.rowcount
+        return cur.rowcount
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

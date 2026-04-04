@@ -1,12 +1,10 @@
-"""tinker init — interactive setup wizard.
+"""tinker init wizards.
 
-Guides the user through:
-  1. Cloud provider + backend selection
-  2. IAM / permission setup (show commands or create automatically)
-  3. LLM provider + model selection
-  4. Optional integrations (Slack, GitHub)
-  5. Writing .env and tinker.toml
-  6. Optionally deploying the server
+Two wizards:
+  ServerWizard — run on the machine that will host tinker server
+                 auto-detects cloud, checks IAM/permissions, configures Slack, writes .env
+  CLIWizard    — run on a developer's laptop
+                 asks for server URL + API token, tests connection, writes ~/.tinker/config
 """
 
 from __future__ import annotations
@@ -14,15 +12,11 @@ from __future__ import annotations
 import hashlib
 import os
 import secrets
-import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
-import questionary
 import structlog
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.syntax import Syntax
@@ -30,58 +24,31 @@ from rich.syntax import Syntax
 log = structlog.get_logger(__name__)
 console = Console()
 
+
 # ── Cloud / backend catalogues ────────────────────────────────────────────────
 
-MODE_CHOICES = [
-    questionary.Choice(
-        "Local  — run directly from this machine (dev / solo use)",
-        value="local",
-    ),
-    questionary.Choice(
-        "Server — connect to a deployed Tinker server (team use)",
-        value="server",
-    ),
-    questionary.Choice(
-        "Deploy — generate Helm / Terraform config to deploy a new server",
-        value="deploy",
-    ),
-]
-
 CLOUD_CHOICES = [
-    questionary.Choice("AWS",                  value="aws"),
-    questionary.Choice("GCP (Google Cloud)",   value="gcp"),
-    questionary.Choice("Azure",                value="azure"),
-    questionary.Choice("Self-hosted (Grafana + Prometheus)", value="grafana"),
-    questionary.Choice("Datadog",              value="datadog"),
-    questionary.Choice("Elastic / OpenSearch", value="elastic"),
+    ("AWS (CloudWatch + X-Ray)",                 "cloudwatch",  "aws"),
+    ("GCP (Cloud Logging + Monitoring)",         "gcp",         "gcp"),
+    ("Azure (Log Analytics + Monitor)",          "azure",       "azure"),
+    ("Self-hosted (Grafana + Prometheus + Loki)", "grafana",     "grafana"),
+    ("Datadog",                                  "datadog",     "datadog"),
+    ("Elastic / OpenSearch",                     "elastic",     "elastic"),
 ]
-
-DEPLOY_TARGET = {
-    "aws":     ["Helm on EKS (recommended)", "Terraform — ECS Fargate", "Docker Compose (self-hosted VM)"],
-    "gcp":     ["Helm on GKE (recommended)", "Terraform — Cloud Run",   "Docker Compose (self-hosted VM)"],
-    "azure":   ["Helm on AKS (recommended)", "Terraform — Container Apps", "Docker Compose (self-hosted VM)"],
-    "grafana": ["Docker Compose"],
-    "datadog": ["Docker Compose"],
-    "elastic": ["Docker Compose"],
-}
 
 LLM_CHOICES = [
-    questionary.Choice("Anthropic (Claude) — direct",       value="anthropic"),
-    questionary.Choice("OpenRouter — access 100+ models",   value="openrouter"),
-    questionary.Choice("OpenAI (GPT-4o etc.)",              value="openai"),
-    questionary.Choice("Groq — fast open-source models",    value="groq"),
-    questionary.Choice("Ollama — local models",             value="ollama"),
+    ("Anthropic (Claude) — direct",      "anthropic",  "ANTHROPIC_API_KEY"),
+    ("OpenRouter — access 100+ models",  "openrouter", "OPENROUTER_API_KEY"),
+    ("OpenAI (GPT-4o etc.)",             "openai",     "OPENAI_API_KEY"),
+    ("Groq — fast open-source models",   "groq",       "GROQ_API_KEY"),
 ]
 
-OPENROUTER_MODELS = [
-    questionary.Choice("anthropic/claude-sonnet-4-6  (recommended)", value="openrouter/anthropic/claude-sonnet-4-6"),
-    questionary.Choice("anthropic/claude-opus-4-6",                  value="openrouter/anthropic/claude-opus-4-6"),
-    questionary.Choice("openai/gpt-4o",                              value="openrouter/openai/gpt-4o"),
-    questionary.Choice("openai/gpt-4o-mini (cheaper)",               value="openrouter/openai/gpt-4o-mini"),
-    questionary.Choice("meta-llama/llama-3.1-70b-instruct (free)",   value="openrouter/meta-llama/llama-3.1-70b-instruct"),
-    questionary.Choice("google/gemini-pro-1.5",                      value="openrouter/google/gemini-pro-1.5"),
-]
-
+LLM_MODELS = {
+    "anthropic":  ("anthropic/claude-sonnet-4-6", "anthropic/claude-opus-4-6"),
+    "openrouter": ("openrouter/anthropic/claude-sonnet-4-6", "openrouter/anthropic/claude-opus-4-6"),
+    "openai":     ("openai/gpt-4o", "openai/gpt-4o"),
+    "groq":       ("groq/llama-3.1-70b-versatile", "groq/llama-3.1-70b-versatile"),
+}
 
 # ── IAM permission guides ─────────────────────────────────────────────────────
 
@@ -102,718 +69,481 @@ AWS_POLICY = """\
   ]
 }"""
 
-AWS_SETUP_COMMANDS = """\
-# 1. Create the role
-aws iam create-role \\
-  --role-name tinker-readonly \\
-  --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ecs-tasks.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
-
-# 2. Attach the policy (saved to /tmp/tinker-policy.json)
-aws iam put-role-policy \\
-  --role-name tinker-readonly \\
-  --policy-name TinkerReadOnly \\
-  --policy-document file:///tmp/tinker-policy.json
-"""
-
-GCP_SETUP_COMMANDS = """\
-# 1. Create the service account
-gcloud iam service-accounts create tinker-readonly \\
-  --display-name "Tinker read-only"
-
-# 2. Grant read-only roles
+GCP_IAM_COMMANDS = """\
 gcloud projects add-iam-policy-binding PROJECT_ID \\
-  --member="serviceAccount:tinker-readonly@PROJECT_ID.iam.gserviceaccount.com" \\
+  --member="serviceAccount:tinker@PROJECT_ID.iam.gserviceaccount.com" \\
   --role="roles/logging.viewer"
-
 gcloud projects add-iam-policy-binding PROJECT_ID \\
-  --member="serviceAccount:tinker-readonly@PROJECT_ID.iam.gserviceaccount.com" \\
-  --role="roles/monitoring.viewer"
+  --member="serviceAccount:tinker@PROJECT_ID.iam.gserviceaccount.com" \\
+  --role="roles/monitoring.viewer"\
 """
 
-AZURE_SETUP_COMMANDS = """\
-# Enable system-assigned managed identity on the Container App (done at deploy time).
-# Assign read roles after the app is created:
-
-az role assignment create \\
-  --assignee <MANAGED_IDENTITY_PRINCIPAL_ID> \\
-  --role "Monitoring Reader" \\
-  --scope /subscriptions/SUBSCRIPTION_ID
-
-az role assignment create \\
-  --assignee <MANAGED_IDENTITY_PRINCIPAL_ID> \\
-  --role "Log Analytics Reader" \\
-  --scope /subscriptions/SUBSCRIPTION_ID
+AZURE_IAM_COMMANDS = """\
+az role assignment create --assignee <MANAGED_IDENTITY_PRINCIPAL_ID> \\
+  --role "Monitoring Reader" --scope /subscriptions/SUBSCRIPTION_ID
+az role assignment create --assignee <MANAGED_IDENTITY_PRINCIPAL_ID> \\
+  --role "Log Analytics Reader" --scope /subscriptions/SUBSCRIPTION_ID\
 """
 
 
-# ── Wizard ────────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# ServerWizard
+# ══════════════════════════════════════════════════════════════════════════════
 
-class InitWizard:
-    def __init__(self, env_file: Path = Path(".env"), config_file: Path = Path("tinker.toml")) -> None:
+class ServerWizard:
+    """Wizard for setting up and running tinker server on this machine."""
+
+    def __init__(self, env_file: Path = Path(".env")) -> None:
         self.env_file = env_file
-        self.config_file = config_file
-        self.config: dict[str, str] = {}
+        self._env: dict[str, str] = {}
 
     def run(self) -> None:
         console.print(Panel.fit(
-            "[bold cyan]Welcome to Tinker![/bold cyan]\n"
-            "Let's get you set up in a few steps.\n\n"
+            "[bold cyan]Tinker Server Setup[/bold cyan]\n"
+            "This wizard configures the server that runs in your cloud environment.\n\n"
             "[dim]Press Ctrl+C at any time to exit.[/dim]",
             border_style="cyan",
         ))
         console.print()
 
         try:
-            mode = questionary.select(
-                "How do you want to use Tinker?",
-                choices=MODE_CHOICES,
-            ).ask()
-
-            if mode == "local":
-                self._run_local()
-            elif mode == "server":
-                self._run_server()
-            else:
-                self._run_deploy()
-
-        except (KeyboardInterrupt, questionary.Abort):
+            self._step_cloud()
+            self._step_llm()
+            self._step_slack()
+            self._step_github()
+            self._step_api_key()
+            self._write_env()
+            self._show_next_steps()
+        except (KeyboardInterrupt, EOFError):
             console.print("\n[yellow]Setup cancelled.[/yellow]")
             sys.exit(0)
 
-    def _run_local(self) -> None:
-        """Local mode — CLI talks directly to the cloud from this machine."""
-        console.print()
-        console.print(Panel(
-            "[bold]Local mode[/bold]\n\n"
-            "Tinker will query your cloud backend directly from this machine.\n"
-            "Your local credentials (AWS SSO, gcloud ADC, az login) are used.\n\n"
-            "[dim]Best for: individual dev use, quick investigation, no infra to manage.[/dim]",
-            border_style="cyan",
-        ))
-        console.print()
-        self.config["_mode"] = "local"
-        self._step_cloud()
-        self._step_llm()
-        self._step_github()
-        self._write_files_local()
-        self._show_local_credential_hint()
-
-    def _run_server(self) -> None:
-        """Server mode — CLI talks to an existing Tinker server."""
-        console.print()
-        console.print(Panel(
-            "[bold]Server mode[/bold]\n\n"
-            "Connect the CLI to a deployed Tinker server.\n"
-            "The server holds cloud credentials — you only need an API token.\n\n"
-            "[dim]Best for: team use, persistent monitoring, Slack bot, audit trail.[/dim]",
-            border_style="cyan",
-        ))
-        console.print()
-        self.config["_mode"] = "server"
-
-        url = questionary.text(
-            "Tinker server URL?",
-            default="https://tinker.your-company.internal",
-        ).ask()
-        self.config["_server_url"] = url
-
-        api_key_env = questionary.text(
-            "Env var that holds your API token?",
-            default="TINKER_API_TOKEN",
-        ).ask()
-        self.config["_api_key_env"] = api_key_env
-
-        # Verify server is reachable
-        self._verify_server(url)
-        self._write_files_server()
-
-    def _run_deploy(self) -> None:
-        """Deploy mode — generate Helm values or Terraform tfvars for the platform team."""
-        console.print()
-        console.print(Panel(
-            "[bold]Deploy mode[/bold]\n\n"
-            "Tinker generates deployment config for your infra tooling.\n"
-            "The actual deployment is done by your platform team using Helm or Terraform\n"
-            "— the same tools they already use for everything else.\n\n"
-            "[dim]Best for: production team deployments, GitOps, IaC review workflows.[/dim]",
-            border_style="cyan",
-        ))
-        console.print()
-        self.config["_mode"] = "deploy"
-        self._step_cloud()
-        self._step_llm()
-        self._step_slack()
-        self._step_github()
-        self._step_api_key()
-        self._write_files_deploy()
-
-    def _verify_server(self, url: str) -> None:
-        import urllib.request
-        import urllib.error
-        with console.status(f"Checking {url}/health ..."):
-            try:
-                req = urllib.request.urlopen(f"{url}/health", timeout=5)
-                import json
-                data = json.loads(req.read())
-                console.print(
-                    f"[green]✓ Server reachable[/green]  "
-                    f"version={data.get('version','')}  backend={data.get('backend','')}"
-                )
-            except Exception as exc:
-                console.print(f"[yellow]⚠ Could not reach server: {exc}[/yellow]")
-                console.print("[dim]You can still save config and connect later.[/dim]")
-
-    def _write_files_local(self) -> None:
-        """Write .env and tinker.toml for local mode."""
-        console.print()
-        console.print(Rule("[bold]Writing configuration[/bold]"))
-
-        # .env — credentials
-        env_lines = ["# Generated by tinker init (local mode)", ""]
-        skip = {"_mode", "_deploy_target", "_server_url", "_api_key_env"}
-        for key, value in self.config.items():
-            if key.startswith("_"):
-                continue
-            env_lines.append(f"{key}={value}")
-        env_lines.append("")
-        self.env_file.write_text("\n".join(env_lines))
-        console.print(f"[green]✓[/green] Env written to [cyan]{self.env_file}[/cyan]")
-
-        # tinker.toml
-        backend = self.config.get("TINKER_BACKEND", "cloudwatch")
-        default_model = self.config.get("TINKER_DEFAULT_MODEL", "anthropic/claude-sonnet-4-6")
-        deep_model    = self.config.get("TINKER_DEEP_RCA_MODEL", "anthropic/claude-opus-4-6")
-        toml = (
-            "# Tinker configuration — generated by tinker init\n\n"
-            "[tinker]\n"
-            'mode = "local"\n\n'
-            "[local]\n"
-            f'backend = "{backend}"\n'
-            f'default_model = "{default_model}"\n'
-            f'deep_rca_model = "{deep_model}"\n'
-        )
-        self.config_file.write_text(toml)
-        console.print(f"[green]✓[/green] Config written to [cyan]{self.config_file}[/cyan]")
-
-    def _write_files_server(self) -> None:
-        """Write tinker.toml for server mode (no .env needed — just set the token in your shell)."""
-        console.print()
-        console.print(Rule("[bold]Writing configuration[/bold]"))
-
-        url = self.config.get("_server_url", "")
-        api_key_env = self.config.get("_api_key_env", "TINKER_API_TOKEN")
-        toml = (
-            "# Tinker configuration — generated by tinker init\n\n"
-            "[tinker]\n"
-            'mode = "server"\n\n'
-            "[server]\n"
-            f'url = "{url}"\n'
-            f'api_key_env = "{api_key_env}"\n'
-        )
-        self.config_file.write_text(toml)
-        console.print(f"[green]✓[/green] Config written to [cyan]{self.config_file}[/cyan]")
-        console.print()
-        console.print(Panel(
-            f"[bold]Next step:[/bold] set your API token in your shell\n\n"
-            f"  export {api_key_env}=<your-tinker-api-token>\n\n"
-            f"Then run [bold cyan]tinker doctor[/bold cyan] to verify the connection.",
-            border_style="green",
-        ))
-
-    def _show_local_credential_hint(self) -> None:
-        """After local setup, remind user what credential command to run."""
-        cloud = self.config.get("TINKER_BACKEND", "")
-        hints = {
-            "aws":      "aws sso login  [dim]# or: aws configure[/dim]",
-            "gcp":      "gcloud auth application-default login",
-            "azure":    "az login",
-            "grafana":  "[dim]No cloud credentials needed for Grafana stack[/dim]",
-            "datadog":  "[dim]DATADOG_API_KEY and DATADOG_APP_KEY already set in .env[/dim]",
-            "elastic":  "[dim]ELASTICSEARCH_API_KEY already set in .env[/dim]",
-        }
-        hint = hints.get(cloud, "")
-        if hint:
-            console.print()
-            console.print(Panel(
-                f"[bold]Authenticate with {cloud.upper()}:[/bold]\n\n  {hint}\n\n"
-                "Then run [bold cyan]tinker doctor[/bold cyan] to verify everything works.",
-                border_style="green",
-            ))
-
-    # ── Step 1: Cloud + backend ───────────────────────────────────────────────
+    # ── Steps ─────────────────────────────────────────────────────────────────
 
     def _step_cloud(self) -> None:
-        console.print(Rule("[bold]Step 1 of 5 — Cloud & Observability[/bold]"))
+        console.print(Rule("[bold]Step 1 — Cloud / Observability Backend[/bold]"))
 
-        cloud = questionary.select(
-            "Which cloud provider / observability stack are you using?",
-            choices=CLOUD_CHOICES,
-        ).ask()
+        # Try auto-detection first
+        detected = _detect_cloud()
+        if detected:
+            console.print(f"[green]Auto-detected:[/green] [bold]{detected['label']}[/bold]")
+            use_detected = _ask_yes_no(f"Use {detected['label']}?", default=True)
+            if use_detected:
+                backend = detected["backend"]
+                cloud = detected["cloud"]
+                self._env["TINKER_BACKEND"] = backend
+                self._configure_cloud(cloud)
+                return
 
-        self.config["TINKER_BACKEND"] = cloud
+        # Manual selection
+        console.print()
+        for i, (label, backend, cloud) in enumerate(CLOUD_CHOICES, 1):
+            console.print(f"  [{i}] {label}")
+        console.print()
 
-        # Only ask where to deploy if we're in deploy mode
-        if self.config.get("_mode") == "deploy":
-            deploy_options = DEPLOY_TARGET[cloud]
-            deploy = questionary.select(
-                "Deployment tooling?",
-                choices=deploy_options,
-            ).ask()
-            self.config["_deploy_target"] = deploy
+        while True:
+            raw = input("Select cloud [1]: ").strip() or "1"
+            try:
+                idx = int(raw) - 1
+                label, backend, cloud = CLOUD_CHOICES[idx]
+                break
+            except (ValueError, IndexError):
+                console.print("[red]Invalid choice.[/red]")
 
-        # Cloud-specific vars
+        self._env["TINKER_BACKEND"] = backend
+        self._configure_cloud(cloud)
+
+    def _configure_cloud(self, cloud: str) -> None:
+        console.print()
         if cloud == "aws":
-            self.config["AWS_REGION"] = questionary.text(
-                "AWS region?", default="us-east-1"
-            ).ask()
-            self._show_aws_permissions()
-
+            self._check_aws_permissions()
         elif cloud == "gcp":
-            self.config["GCP_PROJECT_ID"] = questionary.text("GCP project ID?").ask()
-            self._show_gcp_permissions()
-
+            self._check_gcp_permissions()
         elif cloud == "azure":
-            self.config["AZURE_LOG_ANALYTICS_WORKSPACE_ID"] = questionary.text(
-                "Log Analytics workspace ID?"
-            ).ask()
-            self.config["AZURE_SUBSCRIPTION_ID"] = questionary.text(
-                "Azure subscription ID?"
-            ).ask()
-            self.config["AZURE_RESOURCE_GROUP"] = questionary.text(
-                "Resource group name?"
-            ).ask()
-            self._show_azure_permissions()
-
+            self._check_azure_permissions()
         elif cloud == "grafana":
-            self.config["GRAFANA_LOKI_URL"] = questionary.text(
-                "Loki URL?", default="http://localhost:3100"
-            ).ask()
-            self.config["GRAFANA_PROMETHEUS_URL"] = questionary.text(
-                "Prometheus URL?", default="http://localhost:9090"
-            ).ask()
-            self.config["GRAFANA_TEMPO_URL"] = questionary.text(
-                "Tempo URL?", default="http://tempo:3200"
-            ).ask()
-            use_key = questionary.confirm("Do you need an API key? (Grafana Cloud)").ask()
-            if use_key:
-                self.config["GRAFANA_API_KEY"] = questionary.password("Grafana API key?").ask()
-
+            self._configure_grafana()
         elif cloud == "datadog":
-            self.config["DATADOG_API_KEY"] = questionary.password("Datadog API key?").ask()
-            self.config["DATADOG_APP_KEY"] = questionary.password("Datadog application key?").ask()
-            self.config["DATADOG_SITE"] = questionary.text(
-                "Datadog site?", default="datadoghq.com"
-            ).ask()
-
+            self._configure_datadog()
         elif cloud == "elastic":
-            self.config["ELASTICSEARCH_URL"] = questionary.text(
-                "Elasticsearch URL?", default="http://localhost:9200"
-            ).ask()
-            self.config["ELASTICSEARCH_API_KEY"] = questionary.password(
-                "Elasticsearch API key? (leave blank for no auth)"
-            ).ask()
+            self._configure_elastic()
 
-    def _show_aws_permissions(self) -> None:
-        console.print()
-        console.print(Panel(
-            "[bold]IAM Role Setup[/bold]\n\n"
-            "Tinker needs a read-only IAM role attached to the ECS task.\n"
-            "No long-lived credentials — the role is assumed automatically.",
-            border_style="yellow",
-        ))
-        console.print(Syntax(AWS_POLICY, "json", theme="monokai", line_numbers=False))
-        console.print()
-
-        auto = questionary.confirm(
-            "Create the tinker-readonly IAM role automatically? (requires AWS admin credentials)"
-        ).ask()
-        if auto:
-            self._create_aws_role()
-        else:
-            console.print("\n[dim]Run these commands when ready:[/dim]")
-            console.print(Syntax(AWS_SETUP_COMMANDS, "bash", theme="monokai"))
-            questionary.text("Press Enter to continue...").ask()
-
-    def _show_gcp_permissions(self) -> None:
-        console.print()
-        console.print(Panel(
-            "[bold]GCP Service Account Setup[/bold]\n\n"
-            "Tinker needs a service account with logging.viewer and monitoring.viewer roles.\n"
-            "Credentials are picked up automatically via Workload Identity on Cloud Run.",
-            border_style="yellow",
-        ))
-        commands = GCP_SETUP_COMMANDS.replace(
-            "PROJECT_ID", self.config.get("GCP_PROJECT_ID", "PROJECT_ID")
-        )
-        console.print(Syntax(commands, "bash", theme="monokai"))
-        questionary.text("Run those commands, then press Enter to continue...").ask()
-
-    def _show_azure_permissions(self) -> None:
-        console.print()
-        console.print(Panel(
-            "[bold]Azure Managed Identity Setup[/bold]\n\n"
-            "The Container App uses a system-assigned managed identity.\n"
-            "Run these role assignments after the app is deployed.",
-            border_style="yellow",
-        ))
-        console.print(Syntax(AZURE_SETUP_COMMANDS, "bash", theme="monokai"))
-        questionary.text("Press Enter to continue...").ask()
-
-    def _create_aws_role(self) -> None:
-        """Attempt to create the IAM role via boto3."""
-        import json
-        import tempfile
-
+    def _check_aws_permissions(self) -> None:
+        console.print("[dim]Checking AWS CloudWatch permissions...[/dim]")
         try:
             import boto3
-            iam = boto3.client("iam", region_name=self.config.get("AWS_REGION", "us-east-1"))
-        except ImportError:
-            console.print("[red]boto3 not available. Run the commands manually.[/red]")
-            return
-
-        with console.status("[cyan]Creating tinker-readonly IAM role...[/cyan]"):
-            try:
-                assume_policy = json.dumps({
-                    "Version": "2012-10-17",
-                    "Statement": [{
-                        "Effect": "Allow",
-                        "Principal": {"Service": "ecs-tasks.amazonaws.com"},
-                        "Action": "sts:AssumeRole",
-                    }],
-                })
-                iam.create_role(
-                    RoleName="tinker-readonly",
-                    AssumeRolePolicyDocument=assume_policy,
-                    Description="Tinker read-only observability role",
+            client = boto3.client("logs")
+            client.describe_log_groups(limit=1)
+            console.print("[green]✓ CloudWatch Logs read access confirmed.[/green]")
+        except Exception as exc:
+            msg = str(exc)
+            if "credential" in msg.lower() or "NoCredentials" in str(type(exc)):
+                console.print("[yellow]✗ No AWS credentials found.[/yellow]")
+                console.print(
+                    "[dim]Attach an IAM role to this instance with the following policy:[/dim]"
                 )
-                iam.put_role_policy(
-                    RoleName="tinker-readonly",
-                    PolicyName="TinkerReadOnly",
-                    PolicyDocument=AWS_POLICY,
+                console.print(Syntax(AWS_POLICY, "json", theme="monokai"))
+            else:
+                console.print(f"[yellow]! CloudWatch check: {msg[:80]}[/yellow]")
+                console.print(
+                    "[dim]If this is a permissions error, attach the policy above "
+                    "to your IAM role.[/dim]"
                 )
-                console.print("[green]✓ tinker-readonly IAM role created.[/green]")
-            except iam.exceptions.EntityAlreadyExistsException:
-                console.print("[yellow]tinker-readonly role already exists — skipping.[/yellow]")
-            except Exception as exc:
-                console.print(f"[red]Failed: {exc}[/red]")
-                console.print("[dim]Create the role manually using the commands above.[/dim]")
 
-    # ── Step 2: LLM ──────────────────────────────────────────────────────────
+        region = os.environ.get("AWS_DEFAULT_REGION") or os.environ.get("AWS_REGION") or ""
+        if not region:
+            region = input("AWS region [us-east-1]: ").strip() or "us-east-1"
+        self._env["AWS_REGION"] = region
+
+    def _check_gcp_permissions(self) -> None:
+        console.print("[dim]Checking GCP Cloud Logging permissions...[/dim]")
+        try:
+            from google.cloud import logging as gcp_logging
+            gcp_logging.Client().list_entries(max_results=1)
+            console.print("[green]✓ Cloud Logging read access confirmed.[/green]")
+        except Exception as exc:
+            console.print(f"[yellow]! GCP check: {str(exc)[:80]}[/yellow]")
+            console.print("[dim]Required IAM roles:[/dim]")
+            console.print(Syntax(GCP_IAM_COMMANDS, "bash", theme="monokai"))
+
+        project = os.environ.get("GOOGLE_CLOUD_PROJECT") or ""
+        if not project:
+            project = input("GCP project ID: ").strip()
+        if project:
+            self._env["GCP_PROJECT_ID"] = project
+
+    def _check_azure_permissions(self) -> None:
+        console.print("[dim]Checking Azure Monitor permissions...[/dim]")
+        workspace_id = os.environ.get("AZURE_WORKSPACE_ID") or ""
+        if not workspace_id:
+            workspace_id = input("Log Analytics workspace ID: ").strip()
+        if workspace_id:
+            self._env["AZURE_WORKSPACE_ID"] = workspace_id
+
+        try:
+            from azure.identity import DefaultAzureCredential
+            from azure.monitor.query import LogsQueryClient
+            from datetime import datetime, timedelta, timezone
+            cred = DefaultAzureCredential()
+            qc = LogsQueryClient(cred)
+            qc.query_workspace(
+                workspace_id,
+                "AzureDiagnostics | take 1",
+                timespan=timedelta(minutes=5),
+            )
+            console.print("[green]✓ Log Analytics read access confirmed.[/green]")
+        except Exception as exc:
+            console.print(f"[yellow]! Azure check: {str(exc)[:80]}[/yellow]")
+            console.print("[dim]Required role assignments:[/dim]")
+            console.print(Syntax(AZURE_IAM_COMMANDS, "bash", theme="monokai"))
+
+    def _configure_grafana(self) -> None:
+        loki = input("Loki URL [http://localhost:3100]: ").strip() or "http://localhost:3100"
+        prom = input("Prometheus URL [http://localhost:9090]: ").strip() or "http://localhost:9090"
+        api_key = input("Grafana API key (leave blank for no auth): ").strip()
+        self._env["GRAFANA_LOKI_URL"] = loki
+        self._env["GRAFANA_PROMETHEUS_URL"] = prom
+        if api_key:
+            self._env["GRAFANA_API_KEY"] = api_key
+
+    def _configure_datadog(self) -> None:
+        api_key = input("Datadog API key: ").strip()
+        app_key = input("Datadog App key: ").strip()
+        site = input("Datadog site [datadoghq.com]: ").strip() or "datadoghq.com"
+        if api_key:
+            self._env["DATADOG_API_KEY"] = api_key
+        if app_key:
+            self._env["DATADOG_APP_KEY"] = app_key
+        self._env["DATADOG_SITE"] = site
+
+    def _configure_elastic(self) -> None:
+        url = input("Elasticsearch URL [http://localhost:9200]: ").strip() or "http://localhost:9200"
+        api_key = input("Elasticsearch API key (leave blank for no auth): ").strip()
+        self._env["ELASTICSEARCH_URL"] = url
+        if api_key:
+            self._env["ELASTICSEARCH_API_KEY"] = api_key
 
     def _step_llm(self) -> None:
         console.print()
-        console.print(Rule("[bold]Step 2 of 5 — LLM Provider[/bold]"))
+        console.print(Rule("[bold]Step 2 — LLM Provider[/bold]"))
+        console.print()
+        for i, (label, _, _) in enumerate(LLM_CHOICES, 1):
+            console.print(f"  [{i}] {label}")
+        console.print()
 
-        provider = questionary.select(
-            "Which LLM provider do you want to use?",
-            choices=LLM_CHOICES,
-        ).ask()
+        while True:
+            raw = input("Select LLM provider [1]: ").strip() or "1"
+            try:
+                idx = int(raw) - 1
+                label, provider, key_name = LLM_CHOICES[idx]
+                break
+            except (ValueError, IndexError):
+                console.print("[red]Invalid choice.[/red]")
 
-        if provider == "anthropic":
-            key = questionary.password("Anthropic API key (sk-ant-...)?").ask()
-            self.config["ANTHROPIC_API_KEY"] = key
-            self.config["TINKER_DEFAULT_MODEL"] = "anthropic/claude-sonnet-4-6"
-            self.config["TINKER_DEEP_RCA_MODEL"] = "anthropic/claude-opus-4-6"
+        api_key = input(f"{key_name}: ").strip()
+        if api_key:
+            self._env[key_name] = api_key
 
-        elif provider == "openrouter":
-            key = questionary.password("OpenRouter API key (sk-or-...)?").ask()
-            self.config["OPENROUTER_API_KEY"] = key
-            default_model = questionary.select(
-                "Default model (used for most queries)?",
-                choices=OPENROUTER_MODELS,
-            ).ask()
-            deep_model = questionary.select(
-                "Deep RCA model (used for --deep analysis)?",
-                choices=OPENROUTER_MODELS,
-                default=OPENROUTER_MODELS[1].value,  # claude-opus
-            ).ask()
-            self.config["TINKER_DEFAULT_MODEL"] = default_model
-            self.config["TINKER_DEEP_RCA_MODEL"] = deep_model
-
-        elif provider == "openai":
-            key = questionary.password("OpenAI API key (sk-...)?").ask()
-            self.config["OPENAI_API_KEY"] = key
-            self.config["TINKER_DEFAULT_MODEL"] = "openai/gpt-4o"
-            self.config["TINKER_DEEP_RCA_MODEL"] = "openai/gpt-4o"
-
-        elif provider == "groq":
-            key = questionary.password("Groq API key (gsk_...)?").ask()
-            self.config["GROQ_API_KEY"] = key
-            self.config["TINKER_DEFAULT_MODEL"] = "groq/llama-3.1-70b-versatile"
-            self.config["TINKER_DEEP_RCA_MODEL"] = "groq/llama-3.1-70b-versatile"
-            console.print("[yellow]Note: Groq models don't support tool use in all configs.[/yellow]")
-
-        elif provider == "ollama":
-            model = questionary.text("Ollama model name?", default="llama3").ask()
-            self.config["TINKER_DEFAULT_MODEL"] = f"ollama/{model}"
-            self.config["TINKER_DEEP_RCA_MODEL"] = f"ollama/{model}"
-
-    # ── Step 3: Slack ─────────────────────────────────────────────────────────
+        default_model, deep_model = LLM_MODELS.get(provider, ("anthropic/claude-sonnet-4-6", "anthropic/claude-opus-4-6"))
+        self._env["TINKER_DEFAULT_MODEL"] = default_model
+        self._env["TINKER_DEEP_RCA_MODEL"] = deep_model
+        console.print(f"[dim]Default model: {default_model}[/dim]")
+        console.print(f"[dim]Deep RCA model: {deep_model}[/dim]")
 
     def _step_slack(self) -> None:
         console.print()
-        console.print(Rule("[bold]Step 3 of 5 — Slack (optional)[/bold]"))
+        console.print(Rule("[bold]Step 3 — Slack (optional)[/bold]"))
+        console.print()
 
-        if not questionary.confirm("Enable Slack bot integration?", default=False).ask():
+        if not _ask_yes_no("Set up Slack alerts?", default=False):
             return
 
-        console.print(Panel(
-            "Create a Slack app at [link=https://api.slack.com/apps]api.slack.com/apps[/link]\n"
-            "Enable: Incoming Webhooks, Slash Commands, Socket Mode\n"
-            "Add bot scopes: chat:write, commands, users.read, usergroups.read",
-            title="Slack App Setup",
-            border_style="blue",
-        ))
-        self.config["SLACK_BOT_TOKEN"] = questionary.password("Slack bot token (xoxb-...)?").ask()
-        self.config["SLACK_SIGNING_SECRET"] = questionary.password("Slack signing secret?").ask()
-        self.config["SLACK_ALERTS_CHANNEL"] = questionary.text(
-            "Channel for proactive alerts?", default="#incidents"
-        ).ask()
+        bot_token = input("Slack bot token (xoxb-...): ").strip()
+        if not bot_token:
+            return
+        self._env["SLACK_BOT_TOKEN"] = bot_token
 
-    # ── Step 4: GitHub ────────────────────────────────────────────────────────
+        channel = input("Default alert channel [#incidents]: ").strip() or "#incidents"
+        self._env["SLACK_ALERTS_CHANNEL"] = channel
+
+        # Test it
+        console.print("[dim]Testing Slack connection...[/dim]")
+        try:
+            import asyncio
+            from slack_sdk.web.async_client import AsyncWebClient
+            client = AsyncWebClient(token=bot_token)
+            asyncio.run(client.auth_test())
+            console.print("[green]✓ Slack connection confirmed.[/green]")
+        except Exception as exc:
+            console.print(f"[yellow]! Slack test failed: {str(exc)[:60]}[/yellow]")
 
     def _step_github(self) -> None:
         console.print()
-        console.print(Rule("[bold]Step 4 of 5 — GitHub (optional)[/bold]"))
+        console.print(Rule("[bold]Step 4 — GitHub (optional, for auto-PRs)[/bold]"))
+        console.print()
 
-        if not questionary.confirm(
-            "Enable GitHub integration? (opens PRs with suggested fixes)", default=False
-        ).ask():
+        if not _ask_yes_no("Set up GitHub integration?", default=False):
             return
 
-        self.config["GITHUB_TOKEN"] = questionary.password("GitHub token (ghp_...)?").ask()
-        self.config["GITHUB_REPO"] = questionary.text(
-            "Repository? (org/repo)", default=""
-        ).ask()
-        self.config["TINKER_REPO_PATH"] = questionary.text(
-            "Local path to the repository?", default=os.getcwd()
-        ).ask()
-
-    # ── Step 5: Server API key ────────────────────────────────────────────────
+        token = input("GitHub token (ghp_...): ").strip()
+        repo = input("Repository (owner/repo): ").strip()
+        if token:
+            self._env["GITHUB_TOKEN"] = token
+        if repo:
+            self._env["GITHUB_REPO"] = repo
 
     def _step_api_key(self) -> None:
         console.print()
-        console.print(Rule("[bold]Step 5 of 5 — Server Access[/bold]"))
+        console.print(Rule("[bold]Step 5 — Server API Key[/bold]"))
+        console.print()
+        console.print(
+            "The CLI authenticates to this server with an API key.\n"
+            "Generate one now and share the raw key with CLI users.\n"
+            "The server stores only the SHA-256 hash.\n"
+        )
 
         raw_key = secrets.token_urlsafe(32)
         key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-
-        self.config["TINKER_API_KEYS"] = (
-            f'[{{"hash":"{key_hash}","subject":"default","roles":["sre"]}}]'
-        )
-        self._generated_api_key = raw_key
+        hashed_entry = f'{{"hash": "{key_hash}", "subject": "admin", "roles": ["oncall"]}}'
+        self._env["TINKER_API_KEYS"] = f"[{hashed_entry}]"
 
         console.print(Panel(
-            f"[bold]Your Tinker API key[/bold] (save this — it won't be shown again)\n\n"
-            f"[green bold]{raw_key}[/green bold]\n\n"
-            "[dim]Set this as TINKER_API_TOKEN in your shell or CI to use the CLI.[/dim]",
-            border_style="green",
+            f"[bold]Raw API key[/bold] (give this to CLI users):\n\n"
+            f"[bold cyan]{raw_key}[/bold cyan]\n\n"
+            "[dim]Store it somewhere safe — it won't be shown again.[/dim]",
+            border_style="yellow",
         ))
 
-    # ── Write deploy config (Helm values + Terraform tfvars) ─────────────────
-
-    def _write_files_deploy(self) -> None:
+    def _write_env(self) -> None:
         console.print()
-        console.print(Rule("[bold]Generating deployment configuration[/bold]"))
-
-        cloud = self.config.get("TINKER_BACKEND", "cloudwatch")
-        deploy_target = self.config.get("_deploy_target", "Docker Compose")
-        raw_key = getattr(self, "_generated_api_key", "")
-        default_model = self.config.get("TINKER_DEFAULT_MODEL", "anthropic/claude-sonnet-4-6")
-
-        # tinker.toml — CLI config pointing at the not-yet-deployed server
-        toml = (
-            "# Tinker CLI configuration — generated by tinker init\n\n"
-            "[tinker]\n"
-            'mode = "server"\n\n'
-            "[server]\n"
-            "# Fill in the URL once the server is deployed\n"
-            'url = ""\n'
-            'api_key_env = "TINKER_API_TOKEN"\n'
-        )
-        self.config_file.write_text(toml)
-        console.print(f"[green]✓[/green] CLI config written to [cyan]{self.config_file}[/cyan]")
-
-        if "Helm" in deploy_target:
-            self._write_helm_values(cloud, default_model)
-        elif "Terraform" in deploy_target:
-            self._write_terraform_tfvars(cloud)
-        else:
-            self._write_compose_env(cloud)
-
-        self._print_secrets_guidance(cloud)
-
-        console.print()
-        console.print(Panel(
-            f"[bold]Your Tinker API key[/bold] (save this — not stored anywhere)\n\n"
-            f"[green bold]{raw_key}[/green bold]\n\n"
-            "[dim]Store in your secrets manager as [bold]tinker/api-keys[/bold].\n"
-            "Set TINKER_API_TOKEN in your shell to use the CLI once the server is deployed.[/dim]",
-            border_style="green",
-        ))
-
-    def _write_helm_values(self, cloud: str, default_model: str) -> None:
-        values_path = Path("tinker-values.yaml")
-        key_hash = hashlib.sha256(
-            getattr(self, "_generated_api_key", "").encode()
-        ).hexdigest()
-
-        env_vars: dict[str, str] = {
-            "TINKER_BACKEND": cloud,
-            "TINKER_DEFAULT_MODEL": default_model,
-        }
-        if cloud == "aws":
-            env_vars["AWS_REGION"] = self.config.get("AWS_REGION", "us-east-1")
-        elif cloud == "gcp":
-            env_vars["GCP_PROJECT_ID"] = self.config.get("GCP_PROJECT_ID", "")
-        elif cloud == "azure":
-            env_vars["AZURE_LOG_ANALYTICS_WORKSPACE_ID"] = self.config.get("AZURE_LOG_ANALYTICS_WORKSPACE_ID", "")
-            env_vars["AZURE_SUBSCRIPTION_ID"] = self.config.get("AZURE_SUBSCRIPTION_ID", "")
-            env_vars["AZURE_RESOURCE_GROUP"] = self.config.get("AZURE_RESOURCE_GROUP", "")
-
-        slack_channel = self.config.get("SLACK_ALERTS_CHANNEL", "")
-        github_repo   = self.config.get("GITHUB_REPO", "")
-
-        env_block = "\n".join(f'  {k}: "{v}"' for k, v in env_vars.items())
-
-        yaml = (
-            "# Tinker Helm values — generated by tinker init\n"
-            "# Add to your infra repo and run:\n"
-            "#   helm install tinker ./deploy/helm/tinker -f tinker-values.yaml\n\n"
-            "image:\n"
-            "  repository: ghcr.io/tinker-ai/tinker\n"
-            "  tag: latest\n\n"
-            "env:\n"
-            f"{env_block}\n\n"
-            "# Secrets — store values in your secrets manager, reference by name\n"
-            "secrets:\n"
-            "  anthropicApiKey: \"\"   # from secrets manager: tinker/anthropic-api-key\n"
-            f'  apiKeys: \'[{{"hash":"{key_hash}","subject":"default","roles":["sre"]}}]\'\n'
-        )
-        if slack_channel:
-            yaml += (
-                "  slackBotToken: \"\"     # from secrets manager: tinker/slack-bot-token\n"
-                "  slackSigningSecret: \"\" # from secrets manager: tinker/slack-signing-secret\n"
-                f'slackAlertsChannel: "{slack_channel}"\n'
-            )
-        if github_repo:
-            yaml += (
-                "  githubToken: \"\"       # from secrets manager: tinker/github-token\n"
-                f'githubRepo: "{github_repo}"\n'
-            )
-
-        values_path.write_text(yaml)
-        console.print(f"[green]✓[/green] Helm values written to [cyan]{values_path}[/cyan]")
-        console.print()
-        console.print("[dim]Next steps:[/dim]")
-        console.print("  1. Add secret values to your secrets manager (see guidance below)")
-        console.print("  2. [cyan]helm install tinker ./deploy/helm/tinker -f tinker-values.yaml[/cyan]")
-        console.print("  3. Get the server URL and fill it into [bold]tinker.toml[/bold]")
-
-    def _write_terraform_tfvars(self, cloud: str) -> None:
-        tfvars_path = Path("tinker.tfvars")
-        key_hash = hashlib.sha256(
-            getattr(self, "_generated_api_key", "").encode()
-        ).hexdigest()
-
+        console.print(Rule("[bold]Writing configuration[/bold]"))
         lines = [
-            '# Tinker Terraform variables — generated by tinker init',
-            f'# cd deploy/terraform/{cloud} && terraform init && terraform apply -var-file=../../../tinker.tfvars',
-            '',
-            f'tinker_backend   = "{cloud}"',
-        ]
-        if cloud == "aws":
-            lines += [
-                f'aws_region       = "{self.config.get("AWS_REGION", "us-east-1")}"',
-            ]
-        elif cloud == "gcp":
-            lines += [
-                f'gcp_project      = "{self.config.get("GCP_PROJECT_ID", "")}"',
-            ]
-        elif cloud == "azure":
-            lines += [
-                f'azure_resource_group     = "{self.config.get("AZURE_RESOURCE_GROUP", "")}"',
-                f'azure_subscription_id    = "{self.config.get("AZURE_SUBSCRIPTION_ID", "")}"',
-                f'azure_workspace_id       = "{self.config.get("AZURE_LOG_ANALYTICS_WORKSPACE_ID", "")}"',
-            ]
-        lines += [
-            '',
-            '# Store secret values in your secrets manager — do not commit this file with real values',
-            '# anthropic_api_key = "sk-ant-..."   # → store in secrets manager instead',
-            f'tinker_api_keys_hash = "{key_hash}"',
-        ]
-        tfvars_path.write_text("\n".join(lines) + "\n")
-        console.print(f"[green]✓[/green] Terraform variables written to [cyan]{tfvars_path}[/cyan]")
-        console.print()
-        console.print("[dim]Next steps:[/dim]")
-        console.print("  1. Add secret values to your secrets manager (see guidance below)")
-        console.print(f"  2. [cyan]cd deploy/terraform/{cloud} && terraform init && terraform apply -var-file=../../../tinker.tfvars[/cyan]")
-        console.print("  3. Copy the output URL into [bold]tinker.toml[/bold]")
-
-    def _write_compose_env(self, cloud: str) -> None:
-        env_lines = [
-            "# Tinker server .env — for Docker Compose deployment",
-            "# Copy to deploy/ and run: docker compose up -d",
+            "# Tinker Server configuration",
+            "# Generated by tinker init server",
             "",
-            f"TINKER_BACKEND={cloud}",
         ]
-        for key, value in self.config.items():
-            if key.startswith("_") or key == "TINKER_BACKEND":
-                continue
-            env_lines.append(f"{key}={value}")
-        env_lines.append("")
-        env_path = Path("tinker-server.env")
-        env_path.write_text("\n".join(env_lines))
-        console.print(f"[green]✓[/green] Server env written to [cyan]{env_path}[/cyan]")
-        console.print()
-        console.print("[dim]Next steps:[/dim]")
-        console.print(f"  1. [cyan]cp {env_path} deploy/.env && docker compose -f deploy/docker-compose.yml up -d[/cyan]")
-        console.print("  2. Get the server URL and fill it into [bold]tinker.toml[/bold]")
+        for k, v in self._env.items():
+            # Quote values with spaces
+            if " " in v or "[" in v:
+                lines.append(f'{k}="{v}"')
+            else:
+                lines.append(f"{k}={v}")
 
-    def _print_secrets_guidance(self, cloud: str) -> None:
-        console.print()
-        console.print(Rule("[bold]Secrets setup[/bold]"))
+        self.env_file.parent.mkdir(parents=True, exist_ok=True)
+        self.env_file.write_text("\n".join(lines) + "\n")
+        console.print(f"[green]✓ Written:[/green] {self.env_file}")
 
-        if cloud == "aws":
+    def _show_next_steps(self) -> None:
+        console.print()
+        console.print(Panel(
+            "[bold]Setup complete![/bold]\n\n"
+            "Start the server:\n\n"
+            f"  [bold cyan]tinker server[/bold cyan]\n\n"
+            "Or with a custom port:\n\n"
+            f"  [bold cyan]tinker server --port 9000[/bold cyan]\n\n"
+            "Then on each developer laptop:\n\n"
+            f"  [bold cyan]tinker init cli[/bold cyan]",
+            border_style="green",
+        ))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CLIWizard
+# ══════════════════════════════════════════════════════════════════════════════
+
+class CLIWizard:
+    """Wizard for pointing a developer's CLI at an existing Tinker server."""
+
+    def run(self) -> None:
+        console.print(Panel.fit(
+            "[bold cyan]Tinker CLI Setup[/bold cyan]\n"
+            "Connect this machine's CLI to a running Tinker server.\n\n"
+            "[dim]Press Ctrl+C at any time to exit.[/dim]",
+            border_style="cyan",
+        ))
+        console.print()
+
+        try:
+            self._run()
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[yellow]Setup cancelled.[/yellow]")
+            sys.exit(0)
+
+    def _run(self) -> None:
+        import asyncio
+
+        # ── URL ───────────────────────────────────────────────────────────────
+        console.print("[dim]Where is your Tinker server running?[/dim]")
+        console.print("[dim](Run [bold]tinker server[/bold] on any machine with cloud access.)[/dim]\n")
+
+        current_url = _read_current_url()
+        prompt = f"Tinker server URL [{current_url}]: " if current_url else "Tinker server URL [http://localhost:8000]: "
+        raw_url = input(prompt).strip()
+        url = raw_url or current_url or "http://localhost:8000"
+        url = url.rstrip("/")
+
+        # ── Token ─────────────────────────────────────────────────────────────
+        console.print()
+        current_token = os.environ.get("TINKER_API_TOKEN", "")
+        token_hint = " (press Enter to keep existing)" if current_token else ""
+        token = input(f"API token{token_hint}: ").strip() or current_token
+
+        if not token:
+            console.print(
+                "[yellow]No token provided.[/yellow]\n"
+                "[dim]The server admin can generate one with [bold]tinker init server[/bold].[/dim]"
+            )
+
+        # ── Test connection ───────────────────────────────────────────────────
+        console.print()
+        console.print("[dim]Testing connection...[/dim]")
+
+        os.environ["TINKER_SERVER_URL"] = url
+        if token:
+            os.environ["TINKER_API_TOKEN"] = token
+
+        try:
+            from tinker.client import get_client
+            client = get_client(url_override=url)
+            data = asyncio.run(client.health())
+            console.print(
+                f"[green]✓ Connected:[/green] "
+                f"Tinker v{data.get('version', '?')}  "
+                f"backend={data.get('backend', '?')}"
+            )
+        except Exception as exc:
+            console.print(f"[yellow]! Connection failed: {str(exc)[:80]}[/yellow]")
+            console.print(
+                "[dim]Saving config anyway. Check that the server is running "
+                "and the token is correct.[/dim]"
+            )
+
+        # ── Write ~/.tinker/config ────────────────────────────────────────────
+        from tinker.client.config import write_config
+        config_path = write_config(url)
+        console.print(f"[green]✓ Saved:[/green] {config_path}")
+
+        # ── Token hint ────────────────────────────────────────────────────────
+        if token:
+            console.print()
             console.print(Panel(
-                "[bold]Store secrets in AWS Secrets Manager:[/bold]\n\n"
-                "  aws secretsmanager create-secret \\\n"
-                "    --name tinker/anthropic-api-key \\\n"
-                "    --secret-string 'sk-ant-...'\n\n"
-                "  aws secretsmanager create-secret \\\n"
-                "    --name tinker/api-keys \\\n"
-                "    --secret-string '[{\"hash\":\"...\",\"subject\":\"default\",\"roles\":[\"sre\"]}]'\n\n"
-                "[dim]The ECS task role (tinker-readonly) must have secretsmanager:GetSecretValue on these ARNs.[/dim]",
+                f"Add to your shell profile ([dim]~/.zshrc[/dim] or [dim]~/.bashrc[/dim]):\n\n"
+                f"  [bold]export TINKER_API_TOKEN={token}[/bold]\n\n"
+                "[dim]The token is a secret — don't commit it to source control.[/dim]",
                 border_style="yellow",
             ))
-        elif cloud == "gcp":
-            console.print(Panel(
-                "[bold]Store secrets in GCP Secret Manager:[/bold]\n\n"
-                "  echo -n 'sk-ant-...' | gcloud secrets create tinker-anthropic-api-key \\\n"
-                "    --data-file=- --project=PROJECT_ID\n\n"
-                "  gcloud secrets add-iam-policy-binding tinker-anthropic-api-key \\\n"
-                "    --member='serviceAccount:tinker-readonly@PROJECT_ID.iam.gserviceaccount.com' \\\n"
-                "    --role='roles/secretmanager.secretAccessor'\n\n"
-                "[dim]Repeat for tinker-api-keys, tinker-slack-bot-token, tinker-github-token.[/dim]",
-                border_style="yellow",
-            ))
-        elif cloud == "azure":
-            console.print(Panel(
-                "[bold]Store secrets in Azure Key Vault:[/bold]\n\n"
-                "  az keyvault create --name tinker-vault --resource-group RG\n\n"
-                "  az keyvault secret set --vault-name tinker-vault \\\n"
-                "    --name anthropic-api-key --value 'sk-ant-...'\n\n"
-                "  # Grant the Container App's managed identity access:\n"
-                "  az keyvault set-policy --name tinker-vault \\\n"
-                "    --object-id <MANAGED_IDENTITY_PRINCIPAL_ID> \\\n"
-                "    --secret-permissions get list\n\n"
-                "[dim]Repeat for tinker-api-keys, slack-bot-token, github-token.[/dim]",
-                border_style="yellow",
-            ))
-        else:
-            console.print(Panel(
-                "[bold]Secrets for Docker Compose:[/bold]\n\n"
-                "Add secret values directly to [cyan]tinker-server.env[/cyan] (keep off version control)\n"
-                "or inject them via your CI/CD system at deploy time.",
-                border_style="yellow",
-            ))
+
+        console.print()
+        console.print(Panel(
+            "[bold]All set![/bold]\n\n"
+            "Try it:\n\n"
+            "  [bold cyan]tinker doctor[/bold cyan]\n"
+            "  [bold cyan]tinker anomaly <your-service>[/bold cyan]",
+            border_style="green",
+        ))
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _detect_cloud() -> dict | None:
+    """Try to detect the cloud environment from instance metadata."""
+    import urllib.request
+
+    # AWS — IMDS v2
+    try:
+        req = urllib.request.Request(
+            "http://169.254.169.254/latest/meta-data/placement/region",
+            headers={"X-aws-ec2-metadata-token-ttl-seconds": "10"},
+            method="PUT",
+        )
+        token = urllib.request.urlopen(req, timeout=1).read().decode()
+        req2 = urllib.request.Request(
+            "http://169.254.169.254/latest/meta-data/placement/region",
+            headers={"X-aws-ec2-metadata-token": token},
+        )
+        region = urllib.request.urlopen(req2, timeout=1).read().decode()
+        if region:
+            return {"label": f"AWS ({region})", "backend": "cloudwatch", "cloud": "aws"}
+    except Exception:
+        pass
+
+    # GCP — metadata server
+    try:
+        req = urllib.request.Request(
+            "http://metadata.google.internal/computeMetadata/v1/project/project-id",
+            headers={"Metadata-Flavor": "Google"},
+        )
+        project = urllib.request.urlopen(req, timeout=1).read().decode()
+        if project:
+            return {"label": f"GCP ({project})", "backend": "gcp", "cloud": "gcp"}
+    except Exception:
+        pass
+
+    # Azure — IMDS
+    try:
+        req = urllib.request.Request(
+            "http://169.254.169.254/metadata/instance?api-version=2021-02-01",
+            headers={"Metadata": "true"},
+        )
+        import json
+        data = json.loads(urllib.request.urlopen(req, timeout=1).read())
+        sub = data.get("compute", {}).get("subscriptionId", "")
+        if sub:
+            return {"label": "Azure", "backend": "azure", "cloud": "azure"}
+    except Exception:
+        pass
+
+    return None
+
+
+def _ask_yes_no(question: str, default: bool = True) -> bool:
+    hint = "[Y/n]" if default else "[y/N]"
+    raw = input(f"{question} {hint} ").strip().lower()
+    if not raw:
+        return default
+    return raw in ("y", "yes")
+
+
+def _read_current_url() -> str:
+    from tinker.client.config import _read_config_url
+    return os.environ.get("TINKER_SERVER_URL", "") or _read_config_url()

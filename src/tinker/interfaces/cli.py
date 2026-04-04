@@ -25,40 +25,6 @@ app = typer.Typer(
 console = Console()
 log = structlog.get_logger(__name__)
 
-# Global mode override — set by the --mode option before any command runs
-_mode_override: str | None = None
-
-
-def _mode_callback(value: str | None) -> str | None:
-    global _mode_override
-    if value:
-        _mode_override = value
-    return value
-
-
-@app.callback()
-def _global_options(
-    mode: Optional[str] = typer.Option(
-        None,
-        "--mode",
-        "-m",
-        help="Override mode: [bold]local[/bold] or [bold]server[/bold]",
-        callback=_mode_callback,
-        is_eager=True,
-        show_default=False,
-    ),
-) -> None:
-    """AI-powered observability and incident response agent."""
-
-
-def _get_client():
-    from tinker.client import get_client
-    try:
-        return get_client(mode_override=_mode_override)
-    except RuntimeError as exc:
-        console.print(f"[red]✗ {exc}[/red]")
-        raise typer.Exit(1)
-
 SEVERITY_COLORS = {
     "critical": "bold red",
     "high": "red",
@@ -68,30 +34,98 @@ SEVERITY_COLORS = {
 }
 
 
-# ── Setup commands ────────────────────────────────────────────────────────────
+def _get_client():
+    from tinker.client import get_client
+    try:
+        return get_client()
+    except Exception as exc:
+        console.print(f"[red]✗ {exc}[/red]")
+        raise typer.Exit(1)
+
+
+# ── Server command ────────────────────────────────────────────────────────────
 
 @app.command()
-def init(
-    env_file: str = typer.Option(".env", "--env-file", help="Path to write .env file"),
-    config_file: str = typer.Option("tinker.toml", "--config", help="Path to write tinker.toml"),
+def server(
+    host: str = typer.Option("0.0.0.0", "--host", help="Bind host"),
+    port: int = typer.Option(8000, "--port", "-p", help="Bind port"),
+    reload: bool = typer.Option(False, "--reload", help="Auto-reload on code changes (dev only)"),
+    log_level: str = typer.Option("info", "--log-level", help="Uvicorn log level"),
 ) -> None:
-    """[bold cyan]Interactive setup wizard.[/bold cyan]
+    """[bold cyan]Start the Tinker server.[/bold cyan]
 
-    Guides you through cloud provider selection, permission setup,
-    LLM configuration, and optional deployment.
+    Run this on any machine that has access to your cloud observability stack
+    (CloudWatch, GCP, Azure, Grafana, Datadog, etc.). The server exposes a REST API
+    that the CLI connects to.
+
+    Examples:
+
+      tinker server
+      tinker server --port 9000
+      tinker server --host 127.0.0.1 --reload   # dev mode
+    """
+    import uvicorn
+
+    console.print(Panel.fit(
+        f"[bold cyan]Tinker Server[/bold cyan]  [dim]v{__version__}[/dim]\n"
+        f"Listening on [bold]http://{host}:{port}[/bold]\n"
+        f"Docs: [link]http://{host}:{port}/docs[/link]",
+        border_style="cyan",
+    ))
+
+    uvicorn.run(
+        "tinker.server.app:create_app",
+        factory=True,
+        host=host,
+        port=port,
+        reload=reload,
+        log_level=log_level,
+    )
+
+
+# ── Setup commands ────────────────────────────────────────────────────────────
+
+init_app = typer.Typer(help="Interactive setup wizards.")
+app.add_typer(init_app, name="init")
+
+
+@init_app.command("server")
+def init_server(
+    env_file: str = typer.Option(".env", "--env-file", help="Path to write .env file"),
+) -> None:
+    """[bold cyan]Set up a Tinker server on this machine.[/bold cyan]
+
+    Auto-detects cloud environment, checks observability permissions,
+    configures Slack (optional), and writes a .env file ready for tinker server.
+
+    Examples:
+
+      tinker init server
+      tinker init server --env-file /etc/tinker/.env
     """
     from pathlib import Path
-    from tinker.interfaces.init_wizard import InitWizard
-    InitWizard(env_file=Path(env_file), config_file=Path(config_file)).run()
+    from tinker.interfaces.init_wizard import ServerWizard
+    ServerWizard(env_file=Path(env_file)).run()
+
+
+@init_app.command("cli")
+def init_cli() -> None:
+    """[bold cyan]Connect this machine's CLI to a Tinker server.[/bold cyan]
+
+    Asks for the server URL and API token, tests the connection,
+    and writes ~/.tinker/config.
+
+    Examples:
+
+      tinker init cli
+    """
+    from tinker.interfaces.init_wizard import CLIWizard
+    CLIWizard().run()
 
 
 @app.command()
 def doctor() -> None:
-    """[bold cyan]Verify connectivity to all configured services.[/bold cyan]
-
-    Checks: observability backend, LLM provider, Slack (if configured),
-    GitHub (if configured), and the Tinker server (if TINKER_SERVER_URL is set).
-    """
+    """[bold cyan]Verify connectivity to the configured Tinker server.[/bold cyan]"""
     asyncio.run(_doctor())
 
 
@@ -124,9 +158,6 @@ def fix(
 ) -> None:
     """[bold cyan]Display or apply the suggested fix for an incident.[/bold cyan]
 
-    Without [bold]--approve[/bold]: shows the proposed diff and explanation.
-    With [bold]--approve[/bold]: validates with Semgrep, applies the patch, and opens a PR.
-
     Examples:
 
       tinker fix INC-abc123
@@ -143,13 +174,12 @@ def logs(
     limit: int = typer.Option(50, "--limit", "-n"),
     resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type: ecs, lambda, eks, rds, cloudrun, aks, aca"),
 ) -> None:
-    """[bold cyan]Tail raw logs for a service (no AI analysis).[/bold cyan]
+    """[bold cyan]Fetch recent logs for a service.[/bold cyan]
 
     Examples:
 
       tinker logs payments-api
       tinker logs payments-api --resource ecs -q "level:ERROR" --since 1h
-      tinker logs my-fn --resource lambda
     """
     asyncio.run(_logs(service, query, since, limit, resource))
 
@@ -157,20 +187,16 @@ def logs(
 @app.command()
 def tail(
     service: str = typer.Argument(..., help="Service name"),
-    query: str = typer.Option("*", "--query", "-q", help="Filter query (unified syntax)"),
-    poll: float = typer.Option(2.0, "--poll", "-p", help="Poll interval in seconds (poll-based backends)"),
-    resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type: ecs, lambda, eks, rds, cloudrun, aks, aca"),
+    query: str = typer.Option("*", "--query", "-q", help="Filter query"),
+    poll: float = typer.Option(2.0, "--poll", "-p", help="Poll interval in seconds"),
+    resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type"),
 ) -> None:
     """[bold cyan]Stream live logs for a service (Ctrl-C to stop).[/bold cyan]
-
-    Uses the backend's native streaming where available (Loki websocket),
-    falls back to polling for other backends.
 
     Examples:
 
       tinker tail payments-api
-      tinker tail payments-api --resource ecs -q "level:ERROR"
-      tinker tail auth-service -q 'level:(ERROR OR WARN) AND "timeout"'
+      tinker tail auth-service -q 'level:(ERROR OR WARN)'
     """
     asyncio.run(_tail(service, query, poll, resource))
 
@@ -180,14 +206,13 @@ def metrics(
     service: str = typer.Argument(..., help="Service name"),
     metric: str = typer.Argument(..., help="Metric name"),
     since: str = typer.Option("1h", "--since", "-s"),
-    resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type: ecs, lambda, eks, rds, cloudrun, aks, aca"),
+    resource: Optional[str] = typer.Option(None, "--resource", "-r"),
 ) -> None:
     """[bold cyan]Show metric values for a service.[/bold cyan]
 
     Examples:
 
       tinker metrics payments-api Errors
-      tinker metrics payments-api Errors --resource ecs
       tinker metrics auth-service http_requests_total --since 2h
     """
     asyncio.run(_metrics(service, metric, since, resource))
@@ -197,8 +222,8 @@ def metrics(
 def anomaly(
     service: str = typer.Argument(..., help="Service name"),
     since: str = typer.Option("1h", "--since", "-s", help="Look-back window: 30m, 1h, 2h, 1d"),
-    severity: Optional[str] = typer.Option(None, "--severity", help="Filter by severity: low/medium/high/critical"),
-    resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type: ecs, lambda, eks…"),
+    severity: Optional[str] = typer.Option(None, "--severity", help="Filter: low/medium/high/critical"),
+    resource: Optional[str] = typer.Option(None, "--resource", "-r"),
     json_out: bool = typer.Option(False, "--json", help="Output as JSON"),
 ) -> None:
     """[bold cyan]Detect anomalies for a service (fast, no LLM).[/bold cyan]
@@ -216,17 +241,16 @@ def anomaly(
 def monitor(
     service: str = typer.Argument(..., help="Service name"),
     since: str = typer.Option("1h", "--since", "-s", help="Initial look-back window"),
-    resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type"),
+    resource: Optional[str] = typer.Option(None, "--resource", "-r"),
 ) -> None:
     """[bold cyan]Open interactive anomaly monitor REPL.[/bold cyan]
 
-    Detect anomalies, then use subcommands to explain, fix, and approve:
+    Subcommands inside the REPL:
 
-      explain <n>   — LLM explains the anomaly (uses pre-built summary, not raw logs)
-      fix <n>       — LLM proposes a code fix using repo tools
+      explain <n>   — LLM explains the anomaly
+      fix <n>       — LLM proposes a code fix
       approve       — Apply fix and open a GitHub PR
       refresh       — Re-fetch anomalies
-      filter        — Filter by severity or time window
       help          — Show all commands
 
     Examples:
@@ -237,9 +261,9 @@ def monitor(
     asyncio.run(_monitor_repl(service, since))
 
 
-# ── Watch commands ─────────────────────────────────────────────────────────────
+# ── Watch commands ────────────────────────────────────────────────────────────
 
-watch_app = typer.Typer(help="Manage background anomaly watches.")
+watch_app = typer.Typer(help="Manage server-side anomaly watches.")
 app.add_typer(watch_app, name="watch")
 
 
@@ -248,83 +272,35 @@ def watch_start(
     service: str = typer.Argument(..., help="Service to watch"),
     channel: Optional[str] = typer.Option(
         None, "--channel", "-c",
-        help="Slack channel to post alerts to (e.g. #incidents). "
-             "Defaults to SLACK_ALERTS_CHANNEL from config.",
+        help="Slack channel for alerts, e.g. #incidents (uses server default if omitted)",
     ),
     interval: int = typer.Option(60, "--interval", "-i", help="Poll interval in seconds"),
 ) -> None:
-    """[bold cyan]Start a background watch daemon for a service.[/bold cyan]
+    """[bold cyan]Start a watch for a service on the Tinker server.[/bold cyan]
 
-    Detects anomalies on a schedule and posts to Slack when the anomaly set changes.
-    PID and state are stored in ~/.tinker/tinker.db.
+    The server polls for anomalies on a schedule and posts to Slack when
+    the anomaly set changes.
 
     Examples:
 
       tinker watch start payments-api --channel "#incidents"
       tinker watch start auth-service --interval 120
     """
-    _watch_start(service, channel, interval)
+    asyncio.run(_watch_start(service, channel, interval))
 
 
 @watch_app.command("list")
 def watch_list() -> None:
-    """[bold cyan]List running background watches.[/bold cyan]"""
-    from tinker.store.db import TinkerDB
-    db = TinkerDB()
-    watches = db.list_watches(status="running")
-    db.close()
-
-    if not watches:
-        console.print("[dim]No running watches.[/dim]")
-        return
-
-    table = Table(show_header=True, header_style="bold magenta", title="Running Watches")
-    table.add_column("ID", width=16)
-    table.add_column("Service", width=20)
-    table.add_column("PID", width=7)
-    table.add_column("Channel", width=16)
-    table.add_column("Interval", width=10)
-    table.add_column("Last Run")
-
-    for w in watches:
-        table.add_row(
-            w["watch_id"],
-            w["service"],
-            str(w["pid"]),
-            w.get("slack_channel") or "—",
-            f"{w['interval_seconds']}s",
-            (w.get("last_run_at") or "never")[:19],
-        )
-    console.print(table)
+    """[bold cyan]List watches on the Tinker server.[/bold cyan]"""
+    asyncio.run(_watch_list())
 
 
 @watch_app.command("stop")
 def watch_stop(
     watch_id: str = typer.Argument(..., help="Watch ID from 'tinker watch list'"),
 ) -> None:
-    """[bold cyan]Stop a background watch daemon.[/bold cyan]"""
-    from tinker.store.db import TinkerDB
-    db = TinkerDB()
-    ok = db.stop_watch(watch_id)
-    db.close()
-    if ok:
-        console.print(f"[green]Watch {watch_id} stopped.[/green]")
-    else:
-        console.print(f"[red]Watch {watch_id} not found or already stopped.[/red]")
-
-
-@watch_app.command("clean")
-def watch_clean() -> None:
-    """[bold cyan]Remove stopped or dead watches and old sessions.[/bold cyan]"""
-    from tinker.store.db import TinkerDB
-    db = TinkerDB()
-    watches_removed = db.clean_watches()
-    sessions_removed = db.clean_sessions()
-    db.close()
-    console.print(
-        f"[green]Removed {watches_removed} dead watch(es) "
-        f"and {sessions_removed} old session(s).[/green]"
-    )
+    """[bold cyan]Stop a watch on the Tinker server.[/bold cyan]"""
+    asyncio.run(_watch_stop(watch_id))
 
 
 @app.command()
@@ -333,109 +309,38 @@ def version() -> None:
     console.print(f"tinker {__version__}")
 
 
-# ── Help ──────────────────────────────────────────────────────────────────────
-
-@app.command(name="help")
-def show_help() -> None:
-    """[bold cyan]Show detailed usage guide with examples.[/bold cyan]"""
-    _print_help()
-
-
 # ── Async implementations ─────────────────────────────────────────────────────
 
 async def _doctor() -> None:
-    from tinker.config import settings
-
     client = _get_client()
-    console.print(Panel.fit(
-        f"[bold]Tinker Doctor[/bold]  [dim]mode: {client.mode}[/dim]",
-        border_style="cyan",
-    ))
+    console.print(Panel.fit("[bold]Tinker Doctor[/bold]", border_style="cyan"))
     console.print()
-
     results: list[tuple[str, bool, str]] = []
 
-    if client.mode == "server":
-        # 1. Server reachability + health
-        try:
-            data = await client.health()
-            results.append(("Server", True, f"{data.get('version','')} backend={data.get('backend','')}"))
-        except Exception as exc:
-            results.append(("Server", False, str(exc)[:80]))
-            _print_doctor_table(results)
-            console.print()
-            console.print(
-                "[red]Cannot reach Tinker server.[/red]\n"
-                "[dim]See [bold]deploy/helm/[/bold] or [bold]deploy/terraform/[/bold] to deploy, or use [bold]--mode local[/bold].[/dim]"
-            )
-            raise typer.Exit(1)
+    try:
+        data = await client.health()
+        results.append(("Server", True, f"v{data.get('version','')}  backend={data.get('backend','')}"))
+    except Exception as exc:
+        results.append(("Server", False, str(exc)[:80]))
+        _print_doctor_table(results)
+        console.print()
+        console.print(
+            "[red]Cannot reach Tinker server.[/red]\n"
+            "[dim]Run [bold]tinker server[/bold] on the target machine, "
+            "then [bold]tinker init cli[/bold] to point this CLI at it.[/dim]"
+        )
+        raise typer.Exit(1)
 
-        # 2. Backend via server
-        try:
-            from datetime import timezone, timedelta
-            from datetime import datetime as dt
-            end = dt.now(timezone.utc)
-            start = end - timedelta(minutes=5)
-            await client.query_logs("_health_check_", "*", start, end, limit=1)
-            results.append(("Backend", True, "query ok"))
-        except Exception as exc:
-            msg = str(exc)[:60]
-            is_ok = not any(w in msg.lower() for w in ["auth", "credential", "403", "401"])
-            results.append(("Backend", is_ok, msg))
-
-    else:
-        # 1. LLM provider (local mode — client machine needs the key)
-        try:
-            import litellm
-            from tinker.client.local import LocalClient
-            assert isinstance(client, LocalClient)
-            model = client._cfg.default_model
-            resp = litellm.completion(
-                model=model,
-                messages=[{"role": "user", "content": "reply with the word OK only"}],
-                max_tokens=5,
-            )
-            text = resp.choices[0].message.content or ""
-            results.append(("LLM", True, f"{model} → {text.strip()[:20]}"))
-        except Exception as exc:
-            results.append(("LLM", False, str(exc)[:60]))
-
-        # 2. Observability backend
-        try:
-            from datetime import timezone, timedelta
-            from datetime import datetime as dt
-            end = dt.now(timezone.utc)
-            start = end - timedelta(minutes=5)
-            await client.query_logs("_health_check_", "*", start, end, limit=1)
-            from tinker.client.local import LocalClient
-            assert isinstance(client, LocalClient)
-            results.append(("Backend", True, client._cfg.backend))
-        except Exception as exc:
-            msg = str(exc)[:60]
-            is_ok = not any(w in msg.lower() for w in ["auth", "credential", "permission", "403", "401"])
-            from tinker.client.local import LocalClient
-            assert isinstance(client, LocalClient)
-            results.append(("Backend", is_ok, f"{client._cfg.backend}: {msg}"))
-
-    # Slack + GitHub checks are server-side concerns; only check in local mode
-    if client.mode == "local":
-        if settings.slack_bot_token:
-            try:
-                from slack_sdk.web.async_client import AsyncWebClient
-                sc = AsyncWebClient(token=settings.slack_bot_token.get_secret_value())
-                await sc.auth_test()
-                results.append(("Slack", True, "auth_test passed"))
-            except Exception as exc:
-                results.append(("Slack", False, str(exc)[:60]))
-
-        if settings.github_token:
-            try:
-                from github import Github
-                gh = Github(settings.github_token.get_secret_value())
-                gh.get_user().login
-                results.append(("GitHub", True, "authenticated"))
-            except Exception as exc:
-                results.append(("GitHub", False, str(exc)[:60]))
+    try:
+        from datetime import timezone, timedelta, datetime as dt
+        end = dt.now(timezone.utc)
+        start = end - timedelta(minutes=5)
+        await client.query_logs("_health_check_", "*", start, end, limit=1)
+        results.append(("Backend", True, "query ok"))
+    except Exception as exc:
+        msg = str(exc)[:60]
+        is_ok = not any(w in msg.lower() for w in ["auth", "credential", "403", "401"])
+        results.append(("Backend", is_ok, msg))
 
     _print_doctor_table(results)
 
@@ -445,14 +350,12 @@ def _print_doctor_table(results: list[tuple[str, bool, str]]) -> None:
     table.add_column("Check", width=12)
     table.add_column("Status", width=8)
     table.add_column("Detail")
-
     all_ok = True
     for name, ok, detail in results:
         status = "[green]✓ OK[/green]" if ok else "[red]✗ FAIL[/red]"
         if not ok:
             all_ok = False
         table.add_row(name, status, detail)
-
     console.print(table)
     console.print()
     if all_ok:
@@ -461,19 +364,14 @@ def _print_doctor_table(results: list[tuple[str, bool, str]]) -> None:
         console.print("[red]Some checks failed. Review the details above.[/red]")
         raise typer.Exit(1)
 
-# end _print_doctor_table
-
 
 async def _analyze(service: str, since: str, deep: bool, verbose: bool) -> None:
     client = _get_client()
-
     console.print(Panel(
         f"[bold]Analyzing[/bold] [cyan]{service}[/cyan] · last {since}"
-        + (" · [yellow]deep mode[/yellow]" if deep else "")
-        + f"  [dim]({client.mode} mode)[/dim]",
+        + (" · [yellow]deep mode[/yellow]" if deep else ""),
         expand=False,
     ))
-
     if verbose:
         console.print("[dim]Streaming agent reasoning...[/dim]\n")
         async for chunk in await client.stream_analyze(service, since, deep):
@@ -505,19 +403,15 @@ async def _logs(service: str, query: str, since: str, limit: int, resource_type:
     client = _get_client()
     end = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
     start = client.parse_since(since)
-
     with console.status("Querying..."):
         entries = await client.query_logs(service, query, start, end, limit, resource_type=resource_type)
-
     if not entries:
         console.print("[dim]No log entries found.[/dim]")
         return
-
     table = Table(show_header=True, header_style="bold magenta")
     table.add_column("Timestamp", style="dim", width=20)
     table.add_column("Level", width=8)
     table.add_column("Message")
-
     level_styles = {"ERROR": "red", "CRITICAL": "bold red", "WARN": "yellow", "INFO": "green"}
     for entry in entries:
         style = level_styles.get(entry.level, "white")
@@ -532,15 +426,12 @@ async def _logs(service: str, query: str, since: str, limit: int, resource_type:
 async def _tail(service: str, query: str, poll: float, resource_type: str | None = None) -> None:
     client = _get_client()
     level_styles = {"ERROR": "red", "CRITICAL": "bold red", "WARN": "yellow", "WARNING": "yellow", "INFO": "green", "DEBUG": "dim"}
-
     console.print(
         f"[bold green]Tailing[/bold green] [cyan]{service}[/cyan]"
         + (f" · [dim]{query}[/dim]" if query != "*" else "")
-        + (f" · [dim]{resource_type}[/dim]" if resource_type else "")
-        + f"  [dim]({client.mode} mode · Ctrl-C to stop)[/dim]"
+        + "  [dim](Ctrl-C to stop)[/dim]"
     )
     console.print()
-
     try:
         async for entry in await client.tail_logs(service, query, poll_interval=poll, resource_type=resource_type):
             style = level_styles.get(entry.level.upper(), "white")
@@ -555,19 +446,15 @@ async def _metrics(service: str, metric: str, since: str, resource_type: str | N
     client = _get_client()
     end = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
     start = client.parse_since(since)
-
     with console.status("Querying..."):
         points = await client.get_metrics(service, metric, start, end, resource_type=resource_type)
-
     if not points:
         console.print("[dim]No metric data found.[/dim]")
         return
-
     table = Table(show_header=True, header_style="bold magenta")
     table.add_column("Timestamp", style="dim")
     table.add_column("Value", justify="right")
-
-    for p in points[-20:]:  # last 20 data points
+    for p in points[-20:]:
         table.add_row(p.timestamp.strftime("%H:%M:%S"), f"{p.value:.4g}")
     console.print(table)
 
@@ -580,11 +467,8 @@ async def _anomaly(
     json_out: bool,
 ) -> None:
     import json as json_mod
-    from datetime import timedelta, timezone
-    from datetime import datetime as dt
 
     client = _get_client()
-    # Convert since window to minutes for detect_anomalies
     unit = since[-1]
     val = int(since[:-1])
     match unit:
@@ -602,7 +486,6 @@ async def _anomaly(
         anomalies = [a for a in anomalies if a.severity.lower() == severity.lower()]
 
     if json_out:
-        import sys
         print(json_mod.dumps([a.to_dict() for a in anomalies], indent=2, default=str))
         return
 
@@ -637,7 +520,7 @@ async def _anomaly(
 
     console.print(table)
     console.print(
-        "[dim]Run [bold]tinker monitor " + service + "[/bold] to explain and fix anomalies.[/dim]"
+        f"[dim]Run [bold]tinker monitor {service}[/bold] to explain and fix anomalies.[/dim]"
     )
 
 
@@ -653,154 +536,71 @@ async def _monitor_repl(service: str, since: str) -> None:
             raise typer.Exit(1)
 
     from tinker.interfaces.monitor_repl import MonitorREPL
-
     client = _get_client()
-    # MonitorREPL needs a direct backend reference (works in both local and server mode
-    # for local; for server mode it routes through the client's detect_anomalies).
-    if client.mode == "local":
-        from tinker.client.local import LocalClient
-        assert isinstance(client, LocalClient)
-        backend = client.backend()
-    else:
-        # Wrap the remote client's detect_anomalies as a duck-typed backend
-        backend = _RemoteBackendAdapter(client)
-
-    repl = MonitorREPL(service=service, backend=backend, window_minutes=window)
+    repl = MonitorREPL(service=service, client=client, window_minutes=window)
     await repl.run()
 
 
-def _watch_start(service: str, channel: str | None, interval: int) -> None:
-    import subprocess
-    import sys
-    import os
-    from tinker.config import settings
-    from tinker.store.db import TinkerDB
-
-    slack_channel = channel or settings.slack_alerts_channel
-
-    # Spawn detached daemon process
-    cmd = [
-        sys.executable, "-m", "tinker.monitor.watch_daemon",
-        "--service", service,
-        "--interval", str(interval),
-        "--watch-id", "PLACEHOLDER",  # will be replaced after DB insert
-    ]
-    if slack_channel:
-        cmd += ["--channel", slack_channel]
-
-    # Create the DB record first (daemon needs watch_id)
-    db = TinkerDB()
-
-    # Start with pid=0 temporarily, update after spawn
-    watch_id = db.create_watch(
-        service=service,
-        pid=0,
-        slack_channel=slack_channel,
-        interval_seconds=interval,
-    )
-    db.close()
-
-    # Replace placeholder and spawn
-    cmd[cmd.index("PLACEHOLDER")] = watch_id
-
-    proc = subprocess.Popen(
-        cmd,
-        start_new_session=True,   # detach from terminal
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    # Update PID now that we have it
-    db2 = TinkerDB()
-    db2.update_watch(watch_id, pid=proc.pid)
-    db2.close()
-
+async def _watch_start(service: str, channel: str | None, interval: int) -> None:
+    client = _get_client()
+    with console.status(f"[bold green]Creating watch for {service}...[/bold green]"):
+        watch = await client.create_watch(
+            service=service,
+            slack_channel=channel,
+            interval_seconds=interval,
+        )
+    watch_id = watch.get("watch_id", "?")
     console.print(
-        f"[green]Watch started[/green]  "
-        f"[bold]{watch_id}[/bold]  "
-        f"service=[cyan]{service}[/cyan]  "
-        f"pid={proc.pid}  "
-        f"channel={slack_channel or '—'}  "
+        f"[green]Watch started[/green]  [bold]{watch_id}[/bold]\n"
+        f"  service=[cyan]{service}[/cyan]  "
+        f"channel={watch.get('slack_channel') or '—'}  "
         f"interval={interval}s\n"
         f"[dim]Stop with: tinker watch stop {watch_id}[/dim]"
     )
 
 
-# ── Remote backend adapter ────────────────────────────────────────────────────
+async def _watch_list() -> None:
+    client = _get_client()
+    watches = await client.list_watches()
+    if not watches:
+        console.print("[dim]No watches on the server.[/dim]")
+        return
+    table = Table(show_header=True, header_style="bold magenta", title="Server Watches")
+    table.add_column("ID", width=16)
+    table.add_column("Service", width=20)
+    table.add_column("Status", width=9)
+    table.add_column("Channel", width=16)
+    table.add_column("Interval", width=10)
+    table.add_column("Last Run")
+    for w in watches:
+        status = w.get("status", "?")
+        scolor = "green" if status == "running" else "dim"
+        table.add_row(
+            w["watch_id"],
+            w["service"],
+            f"[{scolor}]{status}[/{scolor}]",
+            w.get("slack_channel") or "—",
+            f"{w['interval_seconds']}s",
+            (w.get("last_run_at") or "never")[:19],
+        )
+    console.print(table)
 
-class _RemoteBackendAdapter:
-    """Thin adapter so MonitorREPL can call detect_anomalies via a RemoteClient."""
 
-    def __init__(self, client) -> None:
-        self._client = client
+async def _watch_stop(watch_id: str) -> None:
+    client = _get_client()
+    try:
+        await client.stop_watch(watch_id)
+        console.print(f"[green]Watch {watch_id} stopped.[/green]")
+    except Exception as exc:
+        console.print(f"[red]Failed to stop watch: {exc}[/red]")
+        raise typer.Exit(1)
 
-    async def detect_anomalies(self, service: str, window_minutes: int = 10):
-        return await self._client.detect_anomalies(service, window_minutes)
 
-
-# ── Help content ──────────────────────────────────────────────────────────────
-
-def _print_help() -> None:
-    console.print(Panel.fit(
-        f"[bold cyan]Tinker[/bold cyan] [dim]v{__version__}[/dim]\n"
-        "AI-powered observability and incident response agent",
-        border_style="cyan",
-    ))
-    console.print()
-
-    sections = [
-        ("Setup", [
-            ("tinker init",            "Interactive setup wizard — generates config + deploy values"),
-            ("tinker doctor",          "Verify connectivity to all configured services"),
-        ]),
-        ("Analysis", [
-            ("tinker analyze <service>",          "RCA analysis with incident report"),
-            ("tinker analyze <service> --deep",   "Deep analysis with extended thinking"),
-            ("tinker analyze <service> -v",       "Stream agent reasoning step by step"),
-            ("tinker fix <id>",                   "Show suggested fix for an incident"),
-            ("tinker fix <id> --approve",         "Apply fix and open a GitHub PR"),
-        ]),
-        ("Observability", [
-            ("tinker tail <service>",             "Stream live logs (Ctrl-C to stop)"),
-            ("tinker tail <svc> -q 'level:ERROR'","Stream filtered live logs"),
-            ("tinker logs <service>",             "Fetch recent logs (no AI)"),
-            ("tinker logs <svc> -q 'level:ERROR'","Filter logs by query"),
-            ("tinker metrics <svc> <metric>",     "Show metric time series"),
-            ("tinker monitor --services <svc>",   "Continuous anomaly detection loop"),
-        ]),
-        ("Slack bot commands", [
-            ("/tinker-analyze <service>",          "Analyze a service in a thread"),
-            ("/tinker-fix <id>",                   "Get fix suggestion"),
-            ("/tinker-approve <id>",               "Apply fix (requires oncall role)"),
-            ("/tinker-status",                     "Show active sessions"),
-        ]),
-    ]
-
-    for title, commands in sections:
-        table = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
-        table.add_column(style="bold cyan", no_wrap=True)
-        table.add_column(style="dim")
-        for cmd, desc in commands:
-            table.add_row(cmd, desc)
-        console.print(f"[bold]{title}[/bold]")
-        console.print(table)
-        console.print()
-
-    console.print(Panel(
-        "[bold]Environment variables[/bold]\n\n"
-        "[cyan]TINKER_BACKEND[/cyan]       cloudwatch | gcp | azure | grafana | datadog | elastic\n"
-        "[cyan]TINKER_DEFAULT_MODEL[/cyan] LiteLLM model string, e.g. anthropic/claude-sonnet-4-6\n"
-        "[cyan]ANTHROPIC_API_KEY[/cyan]    or OPENROUTER_API_KEY / OPENAI_API_KEY / GROQ_API_KEY\n\n"
-        "Run [bold cyan]tinker init[/bold cyan] to configure everything interactively.",
-        border_style="dim",
-    ))
-
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _print_report(report: object) -> None:
     from tinker.agent.orchestrator import IncidentReport
     assert isinstance(report, IncidentReport)
-
     color = SEVERITY_COLORS.get(report.severity, "white")
     console.print(Panel(
         f"[{color}]SEVERITY: {report.severity.upper()}[/{color}]\n\n"

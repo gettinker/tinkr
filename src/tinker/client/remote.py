@@ -15,7 +15,6 @@ import structlog
 
 from tinker.backends.base import Anomaly, LogEntry, MetricPoint
 from tinker.agent.orchestrator import IncidentReport
-from tinker.client.base import TinkerClient
 from tinker.client.config import ServerConfig
 
 log = structlog.get_logger(__name__)
@@ -58,7 +57,7 @@ def _parse_metric_point(d: dict) -> MetricPoint:
     )
 
 
-class RemoteClient(TinkerClient):
+class RemoteClient:
     """Routes all operations through the Tinker server REST API."""
 
     mode = "server"
@@ -262,6 +261,34 @@ class RemoteClient(TinkerClient):
             resp.raise_for_status()
         return resp.json()
 
+    # ── Watches ───────────────────────────────────────────────────────────────
+
+    async def create_watch(
+        self,
+        service: str,
+        slack_channel: str | None = None,
+        interval_seconds: int = 60,
+    ) -> dict[str, Any]:
+        body: dict = {"service": service, "interval_seconds": interval_seconds}
+        if slack_channel:
+            body["slack_channel"] = slack_channel
+        async with self._client() as c:
+            resp = await c.post("/api/v1/watches", json=body)
+            resp.raise_for_status()
+        return resp.json()
+
+    async def list_watches(self) -> list[dict[str, Any]]:
+        async with self._client() as c:
+            resp = await c.get("/api/v1/watches")
+            resp.raise_for_status()
+        return resp.json().get("watches", [])
+
+    async def stop_watch(self, watch_id: str) -> dict[str, Any]:
+        async with self._client() as c:
+            resp = await c.delete(f"/api/v1/watches/{watch_id}")
+            resp.raise_for_status()
+        return resp.json()
+
     # ── Ops ───────────────────────────────────────────────────────────────────
 
     async def health(self) -> dict[str, Any]:
@@ -269,3 +296,16 @@ class RemoteClient(TinkerClient):
             resp = await c.get("/health")
             resp.raise_for_status()
         return resp.json()
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def parse_since(self, since: str) -> "datetime":
+        from datetime import timedelta, timezone
+        now = datetime.now(timezone.utc)
+        unit = since[-1]
+        value = int(since[:-1])
+        match unit:
+            case "m": return now - timedelta(minutes=value)
+            case "h": return now - timedelta(hours=value)
+            case "d": return now - timedelta(days=value)
+            case _: raise ValueError(f"Unknown time unit '{unit}' in '{since}'. Use m/h/d.")

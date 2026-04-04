@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,8 +14,21 @@ from tinker import __version__
 log = structlog.get_logger(__name__)
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    from tinker.server.watch_manager import WatchManager
+    from tinker.server.routes.watches import set_manager
+
+    manager = WatchManager()
+    set_manager(manager)
+    await manager.start()
+    yield
+    await manager.stop()
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
+        lifespan=_lifespan,
         title="Tinker Agent Server",
         description="AI-powered observability and incident response agent",
         version=__version__,
@@ -52,10 +67,12 @@ def create_app() -> FastAPI:
     from tinker.server.routes.agent import router as agent_router
     from tinker.server.routes.mcp import router as mcp_router
     from tinker.server.routes.query import router as query_router
+    from tinker.server.routes.watches import router as watches_router
 
     app.include_router(agent_router)
     app.include_router(query_router)
     app.include_router(mcp_router)
+    app.include_router(watches_router)
 
     # ── Slack bot (mounted as ASGI sub-app) ───────────────────────────────────
     try:
