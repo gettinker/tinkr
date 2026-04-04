@@ -143,6 +143,21 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     ),
     _fn(
+        "glob_files",
+        "Find files in the repository matching a glob pattern.",
+        {
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": "Glob pattern relative to repo root, e.g. 'src/**/*.py'",
+                },
+                "max_results": {"type": "integer", "default": 30},
+            },
+            "required": ["pattern"],
+        },
+    ),
+    _fn(
         "apply_fix",
         (
             "Apply a previously suggested fix and open a PR. "
@@ -200,6 +215,8 @@ class ToolDispatcher:
                 return await self._detect_anomalies(tool_input)
             case "get_file":
                 return self._get_file(tool_input)
+            case "glob_files":
+                return self._glob_files(tool_input)
             case "search_code":
                 return self._search_code(tool_input)
             case "get_recent_commits":
@@ -279,6 +296,23 @@ class ToolDispatcher:
                 return f.read()
         except FileNotFoundError:
             return f"ERROR: File not found: {inp['path']}"
+
+    def _glob_files(self, inp: dict[str, Any]) -> str:
+        import glob as glob_mod
+        import os
+        repo = self._repo_path or "."
+        pattern = os.path.join(repo, inp["pattern"].lstrip("/"))
+        max_r = inp.get("max_results", 30)
+        BINARY_EXTS = {
+            ".pyc", ".so", ".o", ".a", ".dylib", ".dll", ".exe",
+            ".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip", ".tar", ".gz",
+        }
+        matches = [
+            m[len(os.path.abspath(repo)) + 1:]
+            for m in glob_mod.glob(pattern, recursive=True)
+            if os.path.isfile(m) and os.path.splitext(m)[1].lower() not in BINARY_EXTS
+        ]
+        return "\n".join(matches[:max_r]) or "(no matches)"
 
     def _search_code(self, inp: dict[str, Any]) -> str:
         import subprocess

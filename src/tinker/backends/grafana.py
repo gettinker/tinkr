@@ -324,6 +324,7 @@ class GrafanaBackend(ObservabilityBackend):
                 limit=200,
             )
             if len(error_logs) > 10:
+                representative, summary = self._summarize_logs(error_logs, window_minutes)
                 anomalies.append(
                     Anomaly(
                         service=service,
@@ -332,7 +333,8 @@ class GrafanaBackend(ObservabilityBackend):
                         severity="high" if len(error_logs) > 50 else "medium",
                         current_value=float(len(error_logs)),
                         threshold=10.0,
-                        recent_logs=error_logs[:20],
+                        recent_logs=representative,
+                        log_summary=summary,
                     )
                 )
         except Exception:

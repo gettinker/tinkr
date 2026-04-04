@@ -227,6 +227,13 @@ class AzureBackend(ObservabilityBackend):
             # The summarize result comes back as a single row with ErrorCount
             error_count = int(entries[0].extra.get("ErrorCount", 0)) if entries else 0
             if error_count > 10:
+                # Re-query to get actual log entries for summarisation
+                err_logs = await self.query_logs(
+                    service,
+                    f"AppExceptions | where AppRoleName == '{service}'",
+                    start, end, limit=200,
+                )
+                representative, summary = self._summarize_logs(err_logs, window_minutes)
                 anomalies.append(
                     Anomaly(
                         service=service,
@@ -235,6 +242,8 @@ class AzureBackend(ObservabilityBackend):
                         severity="high" if error_count > 50 else "medium",
                         current_value=float(error_count),
                         threshold=10.0,
+                        recent_logs=representative,
+                        log_summary=summary,
                     )
                 )
         except Exception:

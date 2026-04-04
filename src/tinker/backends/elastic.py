@@ -153,6 +153,7 @@ class ElasticBackend(ObservabilityBackend):
             service, 'log.level:(ERROR OR CRITICAL)', start, end, limit=200
         )
         if len(error_logs) > 10:
+            representative, summary = self._summarize_logs(error_logs, window_minutes)
             anomalies.append(
                 Anomaly(
                     service=service,
@@ -161,7 +162,8 @@ class ElasticBackend(ObservabilityBackend):
                     severity="high",
                     current_value=float(len(error_logs)),
                     threshold=10.0,
-                    recent_logs=error_logs[:20],
+                    recent_logs=representative,
+                    log_summary=summary,
                 )
             )
 

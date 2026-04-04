@@ -194,18 +194,137 @@ def metrics(
 
 
 @app.command()
+def anomaly(
+    service: str = typer.Argument(..., help="Service name"),
+    since: str = typer.Option("1h", "--since", "-s", help="Look-back window: 30m, 1h, 2h, 1d"),
+    severity: Optional[str] = typer.Option(None, "--severity", help="Filter by severity: low/medium/high/critical"),
+    resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type: ecs, lambda, eks…"),
+    json_out: bool = typer.Option(False, "--json", help="Output as JSON"),
+) -> None:
+    """[bold cyan]Detect anomalies for a service (fast, no LLM).[/bold cyan]
+
+    Examples:
+
+      tinker anomaly payments-api
+      tinker anomaly payments-api --since 2h --severity high
+      tinker anomaly payments-api --json
+    """
+    asyncio.run(_anomaly(service, since, severity, resource, json_out))
+
+
+@app.command()
 def monitor(
-    services: str = typer.Option(..., "--services", "-s", help="Comma-separated service names"),
+    service: str = typer.Argument(..., help="Service name"),
+    since: str = typer.Option("1h", "--since", "-s", help="Initial look-back window"),
+    resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type"),
+) -> None:
+    """[bold cyan]Open interactive anomaly monitor REPL.[/bold cyan]
+
+    Detect anomalies, then use subcommands to explain, fix, and approve:
+
+      explain <n>   — LLM explains the anomaly (uses pre-built summary, not raw logs)
+      fix <n>       — LLM proposes a code fix using repo tools
+      approve       — Apply fix and open a GitHub PR
+      refresh       — Re-fetch anomalies
+      filter        — Filter by severity or time window
+      help          — Show all commands
+
+    Examples:
+
+      tinker monitor payments-api
+      tinker monitor payments-api --since 2h
+    """
+    asyncio.run(_monitor_repl(service, since))
+
+
+# ── Watch commands ─────────────────────────────────────────────────────────────
+
+watch_app = typer.Typer(help="Manage background anomaly watches.")
+app.add_typer(watch_app, name="watch")
+
+
+@watch_app.command("start")
+def watch_start(
+    service: str = typer.Argument(..., help="Service to watch"),
+    channel: Optional[str] = typer.Option(
+        None, "--channel", "-c",
+        help="Slack channel to post alerts to (e.g. #incidents). "
+             "Defaults to SLACK_ALERTS_CHANNEL from config.",
+    ),
     interval: int = typer.Option(60, "--interval", "-i", help="Poll interval in seconds"),
 ) -> None:
-    """[bold cyan]Continuously monitor services and print anomalies.[/bold cyan]
+    """[bold cyan]Start a background watch daemon for a service.[/bold cyan]
 
-    Example:
+    Detects anomalies on a schedule and posts to Slack when the anomaly set changes.
+    PID and state are stored in ~/.tinker/tinker.db.
 
-      tinker monitor --services payments-api,auth-service
+    Examples:
+
+      tinker watch start payments-api --channel "#incidents"
+      tinker watch start auth-service --interval 120
     """
-    service_list = [s.strip() for s in services.split(",")]
-    asyncio.run(_monitor(service_list, interval))
+    _watch_start(service, channel, interval)
+
+
+@watch_app.command("list")
+def watch_list() -> None:
+    """[bold cyan]List running background watches.[/bold cyan]"""
+    from tinker.store.db import TinkerDB
+    db = TinkerDB()
+    watches = db.list_watches(status="running")
+    db.close()
+
+    if not watches:
+        console.print("[dim]No running watches.[/dim]")
+        return
+
+    table = Table(show_header=True, header_style="bold magenta", title="Running Watches")
+    table.add_column("ID", width=16)
+    table.add_column("Service", width=20)
+    table.add_column("PID", width=7)
+    table.add_column("Channel", width=16)
+    table.add_column("Interval", width=10)
+    table.add_column("Last Run")
+
+    for w in watches:
+        table.add_row(
+            w["watch_id"],
+            w["service"],
+            str(w["pid"]),
+            w.get("slack_channel") or "—",
+            f"{w['interval_seconds']}s",
+            (w.get("last_run_at") or "never")[:19],
+        )
+    console.print(table)
+
+
+@watch_app.command("stop")
+def watch_stop(
+    watch_id: str = typer.Argument(..., help="Watch ID from 'tinker watch list'"),
+) -> None:
+    """[bold cyan]Stop a background watch daemon.[/bold cyan]"""
+    from tinker.store.db import TinkerDB
+    db = TinkerDB()
+    ok = db.stop_watch(watch_id)
+    db.close()
+    if ok:
+        console.print(f"[green]Watch {watch_id} stopped.[/green]")
+    else:
+        console.print(f"[red]Watch {watch_id} not found or already stopped.[/red]")
+
+
+@watch_app.command("clean")
+def watch_clean() -> None:
+    """[bold cyan]Remove stopped or dead watches and old sessions.[/bold cyan]"""
+    from tinker.store.db import TinkerDB
+    db = TinkerDB()
+    watches_removed = db.clean_watches()
+    sessions_removed = db.clean_sessions()
+    db.close()
+    console.print(
+        f"[green]Removed {watches_removed} dead watch(es) "
+        f"and {sessions_removed} old session(s).[/green]"
+    )
 
 
 @app.command()
@@ -453,51 +572,171 @@ async def _metrics(service: str, metric: str, since: str, resource_type: str | N
     console.print(table)
 
 
-async def _monitor(services: list[str], interval: int) -> None:
-    import asyncio
+async def _anomaly(
+    service: str,
+    since: str,
+    severity: str | None,
+    resource_type: str | None,
+    json_out: bool,
+) -> None:
+    import json as json_mod
+    from datetime import timedelta, timezone
+    from datetime import datetime as dt
+
     client = _get_client()
+    # Convert since window to minutes for detect_anomalies
+    unit = since[-1]
+    val = int(since[:-1])
+    match unit:
+        case "m": window = val
+        case "h": window = val * 60
+        case "d": window = val * 1440
+        case _:
+            console.print("[red]Unknown time unit in --since. Use m/h/d.[/red]")
+            raise typer.Exit(1)
 
-    async def print_anomaly(anomaly: object) -> None:
-        from tinker.backends.base import Anomaly
-        assert isinstance(anomaly, Anomaly)
-        color = SEVERITY_COLORS.get(anomaly.severity, "white")
-        console.print(Panel(
-            f"[{color}][{anomaly.severity.upper()}][/{color}] "
-            f"[bold]{anomaly.service}[/bold] — {anomaly.description}",
-            title="Anomaly Detected",
-            border_style=color,
-        ))
+    with console.status(f"[bold green]Detecting anomalies for {service}...[/bold green]"):
+        anomalies = await client.detect_anomalies(service, window_minutes=window)
 
+    if severity:
+        anomalies = [a for a in anomalies if a.severity.lower() == severity.lower()]
+
+    if json_out:
+        import sys
+        print(json_mod.dumps([a.to_dict() for a in anomalies], indent=2, default=str))
+        return
+
+    if not anomalies:
+        console.print(f"[dim]No anomalies detected for {service} in the last {since}.[/dim]")
+        return
+
+    table = Table(
+        show_header=True,
+        header_style="bold magenta",
+        title=f"Anomalies — {service} (last {since})",
+    )
+    table.add_column("#", width=3, justify="right")
+    table.add_column("Severity", width=9)
+    table.add_column("Metric", width=20)
+    table.add_column("Description")
+    table.add_column("Patterns", width=8, justify="right")
+    table.add_column("Traces", width=7, justify="right")
+
+    for i, a in enumerate(anomalies, 1):
+        sev_style = SEVERITY_COLORS.get(a.severity.lower(), "white")
+        n_patterns = len((a.log_summary or {}).get("unique_patterns") or [])
+        n_traces = len((a.log_summary or {}).get("stack_traces") or [])
+        table.add_row(
+            str(i),
+            f"[{sev_style}]{a.severity.upper()}[/{sev_style}]",
+            a.metric,
+            a.description[:80],
+            str(n_patterns) if n_patterns else "—",
+            str(n_traces) if n_traces else "—",
+        )
+
+    console.print(table)
+    console.print(
+        "[dim]Run [bold]tinker monitor " + service + "[/bold] to explain and fix anomalies.[/dim]"
+    )
+
+
+async def _monitor_repl(service: str, since: str) -> None:
+    unit = since[-1]
+    val = int(since[:-1])
+    match unit:
+        case "m": window = val
+        case "h": window = val * 60
+        case "d": window = val * 1440
+        case _:
+            console.print("[red]Unknown time unit in --since. Use m/h/d.[/red]")
+            raise typer.Exit(1)
+
+    from tinker.interfaces.monitor_repl import MonitorREPL
+
+    client = _get_client()
+    # MonitorREPL needs a direct backend reference (works in both local and server mode
+    # for local; for server mode it routes through the client's detect_anomalies).
     if client.mode == "local":
-        # Use the full monitoring loop (handles stateful alerting, cooldowns)
-        from tinker.monitor.loop import MonitoringLoop
         from tinker.client.local import LocalClient
         assert isinstance(client, LocalClient)
-        loop = MonitoringLoop(backend=client.backend(), services=services, poll_interval=interval)
-        loop.add_alert_handler(print_anomaly)
-        console.print(
-            f"[bold green]Monitoring[/bold green] {', '.join(services)} "
-            f"every {interval}s [dim](local mode)[/dim]. Press Ctrl+C to stop.\n"
-        )
-        try:
-            await loop.run()
-        except KeyboardInterrupt:
-            await loop.stop()
+        backend = client.backend()
     else:
-        # Server mode: poll detect_anomalies on the server
-        console.print(
-            f"[bold green]Monitoring[/bold green] {', '.join(services)} "
-            f"every {interval}s [dim](server mode)[/dim]. Press Ctrl+C to stop.\n"
-        )
-        try:
-            while True:
-                for svc in services:
-                    anomalies = await client.detect_anomalies(svc, window_minutes=interval // 60 or 1)
-                    for a in anomalies:
-                        await print_anomaly(a)
-                await asyncio.sleep(interval)
-        except KeyboardInterrupt:
-            pass
+        # Wrap the remote client's detect_anomalies as a duck-typed backend
+        backend = _RemoteBackendAdapter(client)
+
+    repl = MonitorREPL(service=service, backend=backend, window_minutes=window)
+    await repl.run()
+
+
+def _watch_start(service: str, channel: str | None, interval: int) -> None:
+    import subprocess
+    import sys
+    import os
+    from tinker.config import settings
+    from tinker.store.db import TinkerDB
+
+    slack_channel = channel or settings.slack_alerts_channel
+
+    # Spawn detached daemon process
+    cmd = [
+        sys.executable, "-m", "tinker.monitor.watch_daemon",
+        "--service", service,
+        "--interval", str(interval),
+        "--watch-id", "PLACEHOLDER",  # will be replaced after DB insert
+    ]
+    if slack_channel:
+        cmd += ["--channel", slack_channel]
+
+    # Create the DB record first (daemon needs watch_id)
+    db = TinkerDB()
+
+    # Start with pid=0 temporarily, update after spawn
+    watch_id = db.create_watch(
+        service=service,
+        pid=0,
+        slack_channel=slack_channel,
+        interval_seconds=interval,
+    )
+    db.close()
+
+    # Replace placeholder and spawn
+    cmd[cmd.index("PLACEHOLDER")] = watch_id
+
+    proc = subprocess.Popen(
+        cmd,
+        start_new_session=True,   # detach from terminal
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    # Update PID now that we have it
+    db2 = TinkerDB()
+    db2.update_watch(watch_id, pid=proc.pid)
+    db2.close()
+
+    console.print(
+        f"[green]Watch started[/green]  "
+        f"[bold]{watch_id}[/bold]  "
+        f"service=[cyan]{service}[/cyan]  "
+        f"pid={proc.pid}  "
+        f"channel={slack_channel or '—'}  "
+        f"interval={interval}s\n"
+        f"[dim]Stop with: tinker watch stop {watch_id}[/dim]"
+    )
+
+
+# ── Remote backend adapter ────────────────────────────────────────────────────
+
+class _RemoteBackendAdapter:
+    """Thin adapter so MonitorREPL can call detect_anomalies via a RemoteClient."""
+
+    def __init__(self, client) -> None:
+        self._client = client
+
+    async def detect_anomalies(self, service: str, window_minutes: int = 10):
+        return await self._client.detect_anomalies(service, window_minutes)
 
 
 # ── Help content ──────────────────────────────────────────────────────────────

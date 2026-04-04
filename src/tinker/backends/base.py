@@ -44,6 +44,10 @@ class Anomaly:
     current_value: float = 0.0
     threshold: float = 0.0
     recent_logs: list[LogEntry] = field(default_factory=list)
+    # Pre-computed compact summary used by explain/fix — avoids sending all raw logs to LLM.
+    # Built by LogSummarizer at detection time. Contains unique_patterns, stack_traces,
+    # time_distribution, common_fields.
+    log_summary: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -54,6 +58,7 @@ class Anomaly:
             "detected_at": self.detected_at.isoformat(),
             "current_value": self.current_value,
             "threshold": self.threshold,
+            "log_summary": self.log_summary,
         }
 
 
@@ -138,6 +143,27 @@ class ObservabilityBackend(ABC):
                     yield entry
             cursor = new_cursor
             await asyncio.sleep(poll_interval)
+
+    # ── Log summarisation helper ──────────────────────────────────────────────
+
+    def _summarize_logs(
+        self,
+        logs: list[LogEntry],
+        window_minutes: int = 10,
+    ) -> tuple[list[LogEntry], dict]:
+        """Deduplicate *logs* into representative samples + a compact summary dict.
+
+        Returns ``(representative_logs, log_summary)`` where:
+          - ``representative_logs`` is one example per unique error pattern (≤ 10),
+            preferring entries that contain a stack trace.
+          - ``log_summary`` is a compact dict (~300–500 tokens) with unique_patterns,
+            stack_traces, time_distribution, and common_fields.
+
+        Call this from ``detect_anomalies`` before building the Anomaly object so
+        that the LLM never receives thousands of raw identical log lines.
+        """
+        from tinker.monitor.summarizer import LogSummarizer
+        return LogSummarizer().summarize(logs, window_minutes=window_minutes)
 
     # ── Convenience helpers (non-abstract) ────────────────────────────────────
 

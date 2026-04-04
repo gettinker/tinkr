@@ -184,6 +184,7 @@ class CloudWatchBackend(ObservabilityBackend):
         try:
             error_logs = await self.query_logs(service, error_query, start, end, limit=200)
             if len(error_logs) > 10:  # crude threshold; replace with dynamic baseline
+                representative, summary = self._summarize_logs(error_logs, window_minutes)
                 anomalies.append(
                     Anomaly(
                         service=service,
@@ -192,7 +193,8 @@ class CloudWatchBackend(ObservabilityBackend):
                         severity="high",
                         current_value=float(len(error_logs)),
                         threshold=10.0,
-                        recent_logs=error_logs[:20],
+                        recent_logs=representative,
+                        log_summary=summary,
                     )
                 )
         except Exception:

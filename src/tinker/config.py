@@ -100,6 +100,10 @@ class TinkerConfig(BaseSettings):
     # ── Codebase ──────────────────────────────────────────────────────────────
     tinker_repo_path: str | None = Field(None, alias="TINKER_REPO_PATH")
 
+    # ── Local state (sessions, watches) ──────────────────────────────────────
+    # Default: ~/.tinker/tinker.db
+    tinker_db_path: str | None = Field(None, alias="TINKER_DB_PATH")
+
     # ── Monitoring ────────────────────────────────────────────────────────────
     poll_interval_seconds: int = Field(60, alias="TINKER_POLL_INTERVAL_SECONDS")
     anomaly_cooldown_minutes: int = Field(30, alias="TINKER_ANOMALY_COOLDOWN_MINUTES")
