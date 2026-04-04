@@ -289,8 +289,19 @@ class MonitorREPL:
         anomaly = self._filtered[idx - 1]
         console.print(f"\n[bold]Finding fix for anomaly #{idx}:[/bold] {anomaly.description}\n")
 
+        error_class = fix_result = None
+        mode_labels = {"transient": "[yellow]targeted[/yellow]", "logic_bug": "[red]deep[/red]"}
+
+        with console.status("[bold green]Classifying error...[/bold green]"):
+            # Show mode before the (potentially long) agent run
+            pass
+
         with console.status("[bold green]Running fix agent on server...[/bold green]"):
             fix_result = await self._client.request_fix(anomaly.to_dict())
+
+        error_class = fix_result.get("error_class", "unknown")
+        mode_label = mode_labels.get(error_class, "[dim]unknown[/dim]")
+        console.print(f"[dim]Investigation mode:[/dim] {mode_label} ({error_class})\n")
 
         self._pending_fix = {**fix_result, "anomaly_idx": idx}
         self._persist_session()
