@@ -90,22 +90,18 @@ app.add_typer(init_app, name="init")
 
 
 @init_app.command("server")
-def init_server(
-    env_file: str = typer.Option(".env", "--env-file", help="Path to write .env file"),
-) -> None:
+def init_server() -> None:
     """[bold cyan]Set up a Tinker server on this machine.[/bold cyan]
 
     Auto-detects cloud environment, checks observability permissions,
-    configures Slack (optional), and writes a .env file ready for tinker server.
+    configures Slack (optional), and writes [bold]~/.tinker/.env[/bold].
 
     Examples:
 
       tinker init server
-      tinker init server --env-file /etc/tinker/.env
     """
-    from pathlib import Path
     from tinker.interfaces.init_wizard import ServerWizard
-    ServerWizard(env_file=Path(env_file)).run()
+    ServerWizard().run()
 
 
 @init_app.command("cli")

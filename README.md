@@ -36,12 +36,22 @@ The server is the single point of credential trust. Cloud credentials (IAM role,
 ## Install
 
 ```bash
-pip install tinker-agent
-# or
-uv add tinker-agent
+# Install globally — tinker available in your PATH everywhere, no venv needed
+uv tool install tinker-agent
+
+# Or with pip
+pip install --user tinker-agent
 ```
 
 Requires Python 3.12+.
+
+> **Development install** (editable, from source):
+> ```bash
+> git clone https://github.com/your-org/tinker
+> cd tinker
+> uv sync                       # creates .venv + installs all deps
+> uv tool install --editable .  # installs tinker globally as editable
+> ```
 
 ---
 
@@ -50,16 +60,17 @@ Requires Python 3.12+.
 ### On the server machine (EC2, Cloud Run, Azure VM, or your laptop)
 
 ```bash
-# 1. Run the setup wizard — detects cloud, checks permissions, generates .env
+# 1. Run the setup wizard
 tinker init server
+#   Auto-detects cloud (AWS/GCP/Azure), checks IAM permissions,
+#   optionally configures Slack, generates API key.
+#   Writes: ~/.tinker/.env
 
-# 2. Start the server
+# 2. Start the server (picks up ~/.tinker/.env automatically)
 tinker server
 # Listening on http://0.0.0.0:8000
 # Docs: http://0.0.0.0:8000/docs
 ```
-
-`tinker init server` auto-detects the cloud environment via instance metadata, verifies IAM permissions with a test API call, optionally configures Slack, generates an API key, and writes `.env`.
 
 ### On each developer's machine
 
@@ -69,12 +80,16 @@ tinker init cli
 # Tinker server URL [http://localhost:8000]: https://tinker.acme.internal
 # API token: <paste key from step 1>
 # ✓ Connected: Tinker v0.1.0  backend=cloudwatch
+# Writes: ~/.tinker/config
 
 # 4. Verify
 tinker doctor
 ```
 
-The API token is stored as `TINKER_API_TOKEN` in your shell profile. The server URL is written to `~/.tinker/config`.
+Add to your shell profile (`~/.zshrc` or `~/.bashrc`):
+```bash
+export TINKER_API_TOKEN=<your-token>
+```
 
 ---
 
@@ -440,7 +455,9 @@ The bot posts proactive alerts from `tinker watch` tasks. Requires `SLACK_BOT_TO
 | File / Variable | Description |
 |---|---|
 | `~/.tinker/config` | Server URL — written by `tinker init cli` |
-| `TINKER_SERVER_URL` | Override server URL (env var) |
+| `~/.tinker/.env` | Server config — written by `tinker init server`, auto-loaded by `tinker server` |
+| `~/.tinker/tinker.db` | SQLite — REPL sessions, watch state |
+| `TINKER_SERVER_URL` | Override server URL (env var takes priority over `~/.tinker/config`) |
 | `TINKER_API_TOKEN` | API token — add to shell profile |
 
 ### Per-backend
@@ -476,19 +493,22 @@ See [.env.example](.env.example) for the full reference.
 The [`local-dev/`](local-dev/) directory runs a full observability stack locally with no cloud account.
 
 ```bash
-# 1. Start Loki + Prometheus + Grafana + a dummy payments-api
+# 1. Start Loki + Prometheus + Grafana + dummy payments-api
 cd local-dev && ./run.sh
 
-# 2. Start Tinker server (separate terminal)
-cp .env.example .env
-# Set: TINKER_BACKEND=grafana, GRAFANA_LOKI_URL=http://localhost:3100, ANTHROPIC_API_KEY=...
-tinker server
+# 2. Configure and start Tinker server (separate terminal)
+tinker init server
+#   → detects no cloud (asks manually), pick "grafana"
+#   → enter Loki URL: http://localhost:3100
+#   → enter ANTHROPIC_API_KEY
+#   → writes ~/.tinker/.env
+tinker server      # picks up ~/.tinker/.env automatically
 
 # 3. Point CLI at it
-tinker init cli   # URL: http://localhost:8000
+tinker init cli    # URL: http://localhost:8000
 
 # 4. Generate traffic and query
-./generate_traffic.sh incident
+cd local-dev && ./generate_traffic.sh incident
 tinker anomaly payments-api --since 5m
 tinker monitor payments-api
 ```
@@ -498,12 +518,31 @@ tinker monitor payments-api
 ## Development
 
 ```bash
-uv sync
+git clone https://github.com/your-org/tinker && cd tinker
+uv sync                          # create .venv, install all deps
+
+# Run via venv (no global install needed during dev)
+uv run tinker --help
+uv run tinker server
+
+# Install globally as editable (changes in src/ take effect immediately)
+uv tool install --editable .
+tinker --help                    # now works without uv run
+
+# Tests
 uv run pytest                    # all tests
 uv run pytest tests/test_query/  # query translator tests
 uv run ruff check src/
 uv run mypy src/
 ```
+
+All per-user state lives in `~/.tinker/`:
+
+| File | Written by | Used by |
+|---|---|---|
+| `~/.tinker/.env` | `tinker init server` | `tinker server` (auto-loaded) |
+| `~/.tinker/config` | `tinker init cli` | all CLI commands |
+| `~/.tinker/tinker.db` | auto-created | `tinker monitor`, `tinker watch` |
 
 ---
 

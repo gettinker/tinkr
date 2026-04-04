@@ -68,6 +68,19 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/tinker"]
 
+# ── Install ────────────────────────────────────────────────────────────────────
+# Global install (recommended — tinker available everywhere, no venv activation):
+#   uv tool install .                  # from source
+#   uv tool install tinker-agent       # from PyPI
+#
+# Development install (editable, inside a venv):
+#   uv sync                            # creates .venv + installs all deps
+#   uv run tinker                      # runs via the venv
+#   uv tool install --editable .       # or install globally as editable
+#
+# After global install the `tinker` binary is in $(uv tool dir)/bin
+# which uv automatically adds to PATH. Verify with: which tinker
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

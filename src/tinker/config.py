@@ -1,14 +1,31 @@
-"""Central configuration loaded from environment variables."""
+"""Central configuration loaded from environment variables.
+
+Resolution order (highest priority first):
+  1. Environment variables (always win)
+  2. ~/.tinker/.env  (user-level config, written by `tinker init server`)
+  3. .env in current working directory (project-level override, optional)
+"""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Ensure ~/.tinker/ exists so the DB and config can be written there
+_tinker_dir = Path.home() / ".tinker"
+_tinker_dir.mkdir(parents=True, exist_ok=True)
+
+_USER_ENV = str(_tinker_dir / ".env")
+_LOCAL_ENV = ".env"
+
 
 class TinkerConfig(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Both files are optional. User-level (~/.tinker/.env) takes priority
+        # over any .env in the current directory.
+        env_file=(_USER_ENV, _LOCAL_ENV),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
