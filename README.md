@@ -1,6 +1,35 @@
 # Tinker
 
-Open-source AI-powered observability and incident response agent. Connects to your existing cloud backend, analyzes logs and metrics, cross-references incidents with your codebase, and suggests fixes — with human approval before any code changes.
+Open-source AI-powered observability and incident response agent. Connects to your cloud backend, analyzes logs and metrics, cross-references incidents with your codebase, and suggests fixes — with human approval before any code changes.
+
+---
+
+## How it works
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Tinker Server  (runs anywhere with cloud access)                │
+│                                                                  │
+│  tinker server  ──► FastAPI on :8000                            │
+│                                                                  │
+│  POST /api/v1/analyze    REST + SSE streaming RCA                │
+│  POST /api/v1/anomalies  anomaly detection                       │
+│  POST /api/v1/watches    server-side background watches          │
+│  GET  /mcp/sse           Remote MCP for Claude Code              │
+│  POST /slack/events      Slack bot                               │
+│                                                                  │
+│  TINKER_BACKEND=cloudwatch|gcp|azure|grafana|datadog|elastic     │
+│  Credentials → IAM role / Workload Identity / Managed Identity   │
+│  Zero long-lived cloud keys on the server.                       │
+└──────────────────┬───────────────────────────────────────────────┘
+                   │  API key  (TINKER_API_TOKEN)
+      ┌────────────┼──────────────────┐
+      ▼            ▼                  ▼
+   CLI          Claude Code        Slack Bot
+  (thin)        remote MCP         (webhook → server)
+```
+
+The server is the single point of credential trust. Cloud credentials (IAM role, Workload Identity, Managed Identity) stay on the server machine. The CLI and Slack bot authenticate with a short API token — they never touch cloud credentials.
 
 ---
 
@@ -12,123 +41,81 @@ pip install tinker-agent
 uv add tinker-agent
 ```
 
-Requires Python 3.11+.
+Requires Python 3.12+.
 
 ---
 
 ## Quick start
 
-### 1. Run the setup wizard
+### On the server machine (EC2, Cloud Run, Azure VM, or your laptop)
 
 ```bash
-tinker init
+# 1. Run the setup wizard — detects cloud, checks permissions, generates .env
+tinker init server
+
+# 2. Start the server
+tinker server
+# Listening on http://0.0.0.0:8000
+# Docs: http://0.0.0.0:8000/docs
 ```
 
-```
-? How do you want to use Tinker?
-  ❯ Local  — run directly from this machine (dev / solo use)
-    Server — connect to a deployed Tinker server (team use)
-    Deploy — generate Helm / Terraform config to deploy a new server
-```
+`tinker init server` auto-detects the cloud environment via instance metadata, verifies IAM permissions with a test API call, optionally configures Slack, generates an API key, and writes `.env`.
 
-Start with **Local** — no server to deploy, uses your existing cloud credentials.
-
----
-
-### Local mode prerequisites
-
-| Requirement | Notes |
-|---|---|
-| Cloud CLI installed | `aws` / `gcloud` / `az` — whichever matches your backend |
-| Cloud credentials | `aws sso login` / `gcloud auth application-default login` / `az login` |
-| Anthropic API key | or any supported LLM provider key |
-| Python 3.11+ | — |
-
-The wizard asks for your cloud and LLM key, then writes `tinker.toml` and `.env`.
+### On each developer's machine
 
 ```bash
-# Authenticate with your cloud after running tinker init
-aws sso login                           # AWS
-gcloud auth application-default login   # GCP
-az login                                # Azure
-# Grafana / Datadog / Elastic — API keys set in .env by the wizard
+# 3. Connect the CLI to the server
+tinker init cli
+# Tinker server URL [http://localhost:8000]: https://tinker.acme.internal
+# API token: <paste key from step 1>
+# ✓ Connected: Tinker v0.1.0  backend=cloudwatch
+
+# 4. Verify
+tinker doctor
 ```
 
----
-
-### Server mode prerequisites
-
-| Requirement | Notes |
-|---|---|
-| Tinker server URL | Provided by whoever deployed the server |
-| Tinker API token | `TINKER_API_TOKEN` — obtained from the server operator |
-| Python 3.11+ | — |
-
-No cloud credentials needed on your machine — the server holds the IAM role.
-
-```bash
-export TINKER_API_TOKEN=<your-token>
-tinker init   # pick "Server", enter the URL
-```
-
----
-
-### 2. Verify
-
-```bash
-tinker doctor        # confirms backend + LLM are reachable
-```
-
-```
-Check    Status   Detail
-──────   ──────   ──────────────────────────────────
-LLM      ✓ OK     anthropic/claude-sonnet-4-6
-Backend  ✓ OK     cloudwatch
-```
+The API token is stored as `TINKER_API_TOKEN` in your shell profile. The server URL is written to `~/.tinker/config`.
 
 ---
 
 ## Commands
 
-All commands take a **service name** as the first positional argument — this is the name of the service in your observability backend (e.g. the ECS service name, Cloud Run service name, Loki `service` label, etc.).
+All commands take a **service name** as the first argument — the service name in your observability backend (ECS service, Cloud Run service, Loki `service` label, etc.).
 
-### Local vs server mode
+### Server management
 
-| Command | Local | Server | Notes |
-|---|---|---|---|
-| `tinker anomaly` | ✓ | ✓ | Fast — no LLM |
-| `tinker monitor` | ✓ | ✓ | Interactive REPL; `explain`/`fix` call LLM |
-| `tinker watch start` | ✓ | — | Daemon runs on this machine using local credentials |
-| `tinker watch list/stop/clean` | ✓ | — | Manages local daemons |
-| `tinker logs` | ✓ | ✓ | — |
-| `tinker tail` | ✓ | ✓ | — |
-| `tinker metrics` | ✓ | ✓ | — |
-| `tinker analyze` | ✓ | ✓ | Full LLM RCA |
-| `tinker fix` | ✓ | ✓ | Requires incident ID from `analyze` |
-| `tinker doctor` | ✓ | ✓ | — |
+```bash
+tinker server                        # start on :8000
+tinker server --port 9000            # custom port
+tinker server --host 127.0.0.1      # bind to localhost only
+tinker server --reload               # dev mode — hot reload
 
-> `tinker watch` runs the anomaly detection loop as a background process on your **local machine**. In server mode, the server already runs the monitoring loop — use the Slack bot or `tinker anomaly` to query it.
+tinker init server                   # setup wizard for the server machine
+tinker init cli                      # connect CLI to a running server
+
+tinker doctor                        # verify server connection and backend
+```
 
 ---
 
 ### Anomaly detection — `tinker anomaly`
 
-Fast anomaly check with no LLM cost. Directly calls `detect_anomalies` on the backend and returns a table.
+Fast anomaly check with no LLM cost. Returns a table directly.
 
 ```bash
-tinker anomaly payments-api                          # last 1h
-tinker anomaly payments-api --since 2h               # custom window
-tinker anomaly payments-api --severity high          # filter by severity
-tinker anomaly payments-api --since 30m --json       # machine-readable output
+tinker anomaly payments-api                    # last 1h
+tinker anomaly payments-api --since 2h         # custom window
+tinker anomaly payments-api --severity high    # filter by severity
+tinker anomaly payments-api --json             # machine-readable
 ```
 
-**Output:** table of anomalies with severity, metric name, description, number of unique error patterns, and number of distinct stack traces detected.
+Output shows severity, metric name, description, number of unique error patterns, and distinct stack traces detected in the error logs.
 
 ---
 
 ### Interactive monitor — `tinker monitor`
 
-Opens an interactive REPL session that displays anomalies and lets you drill down without leaving the terminal. LLM is only invoked when you explicitly ask for `explain` or `fix`.
+Opens a REPL session. Anomaly table is displayed immediately. LLM is only invoked when you explicitly type `explain` or `fix`.
 
 ```bash
 tinker monitor payments-api
@@ -136,12 +123,12 @@ tinker monitor payments-api --since 2h
 ```
 
 ```
-┌─ Tinker Monitor  payments-api  window: 60m ──────────────────────────┐
+┌─ Tinker Monitor  payments-api  window: 60m ──────────────────────┐
 
  Anomalies — payments-api (last 60m)
- #   Severity   Metric          Description                  Patterns  Traces
- 1   HIGH       error_count     847 errors in 10m            2         1
- 2   MEDIUM     latency_p99     2.4s avg, threshold 1s       —         —
+ #   Severity   Metric          Description                 Patterns  Traces
+ 1   HIGH       error_count     847 errors in 10m           2         1
+ 2   MEDIUM     latency_p99     2.4s avg, threshold 1s      —         —
 
 Commands: explain <n> · fix <n> · filter --severity high · refresh
 
@@ -153,119 +140,106 @@ Commands: explain <n> · fix <n> · filter --severity high · refresh
 | Command | LLM? | Description |
 |---|---|---|
 | `list` / `ls` | — | Re-display the anomaly table |
-| `refresh` / `r` | — | Re-fetch anomalies from the backend |
+| `refresh` / `r` | — | Re-fetch anomalies |
 | `filter --severity high` | — | Show only anomalies of given severity |
 | `filter --since 30m` | — | Change the look-back window and re-fetch |
-| `explain <n>` | ✓ | LLM explanation of anomaly #n — uses pre-built summary, not raw logs |
-| `fix <n>` | ✓ | LLM-proposed code fix using repo tools (glob, read, search, blame) |
+| `explain <n>` | ✓ | LLM explanation of anomaly #n |
+| `fix <n>` | ✓ | LLM-proposed code fix using repo tools |
 | `approve` | — | Apply the pending fix and open a GitHub PR |
-| `session clean` | — | Delete sessions older than 24 h from `~/.tinker/tinker.db` |
+| `session clean` | — | Delete sessions older than 24 h |
 | `help` / `?` | — | Show command reference |
 | `quit` / `q` | — | Exit |
 
 #### LLM cost control
 
-`explain` sends a compact summary (~300–1000 tokens) regardless of how many errors occurred:
+`explain` sends a compact summary (~300–1000 tokens) regardless of how many raw errors occurred:
 
-- **Deduplication** — identical log lines are collapsed into one pattern with a count
-- **Stack trace extraction** — Python/Java/Node/Go/Ruby traces are detected, deduplicated by normalised signature, and trimmed to the first 10 lines
-- **Template normalisation** — variable parts (IPs, timestamps, UUIDs, numbers) are replaced with placeholders so `timeout to 10.0.0.3:5432` and `timeout to 10.0.0.7:5432` count as the same pattern
+- **Template normalisation** — variable parts (IPs, timestamps, UUIDs, numbers) are replaced with placeholders, so `timeout to 10.0.0.3:5432` and `timeout to 10.0.0.7:5432` collapse to one pattern
+- **Stack trace extraction** — Python/Java/Node/Go/Ruby traces are detected, deduplicated by normalised signature, and trimmed to 10 lines
+- **Deduplication** — identical patterns are counted, not repeated
 
 Example: 1000 raw error logs → 2 unique patterns + 1 stack trace → 1084-char LLM context.
 
 #### `fix` requirements
 
-`fix <n>` searches your codebase for the root cause using these tools:
-`glob_files`, `get_file`, `search_code`, `get_recent_commits`, `suggest_fix`
+`fix <n>` searches your codebase using: `glob_files`, `get_file`, `search_code`, `get_recent_commits`, `suggest_fix`.
 
 | Setting | How to configure |
 |---|---|
-| Repo path | Set `TINKER_REPO_PATH` in `.env`, or `tinker monitor` auto-detects the current git repo |
-| GitHub PR | `GITHUB_TOKEN` + `GITHUB_REPO` required for `approve` — shown as error if missing |
-
-If `TINKER_REPO_PATH` is not configured and no git repo is found in the current directory, the REPL prompts once and writes the path to the session.
+| Repo path | Set `TINKER_REPO_PATH` in `.env`, or auto-detected from current git repo |
+| GitHub PR | `GITHUB_TOKEN` + `GITHUB_REPO` required for `approve` |
 
 ---
 
 ### Background watches — `tinker watch`
 
-Runs anomaly detection on a schedule as a detached background process. Posts to Slack when the anomaly set changes (deduplicates — same anomalies are not re-posted).
+Watches run as asyncio tasks inside the server process. The server polls for anomalies on a schedule and posts to Slack when the anomaly set changes.
 
 ```bash
-# Start a watch
+# Start a watch (server-side)
 tinker watch start payments-api --channel "#incidents"
-tinker watch start payments-api --channel "#incidents" --interval 120
+tinker watch start payments-api --interval 120
 
-# List running watches
+# List all watches on the server
 tinker watch list
 
 # Stop a watch
 tinker watch stop watch-abc123
+```
 
-# Remove stopped/dead watches and sessions older than 24 h
-tinker watch clean
+```
+ Server Watches
+ ID               Service          Status    Channel      Interval   Last Run
+ watch-a3f2b1c4   payments-api     running   #incidents   60s        2024-01-15 14:32
+ watch-9e2d3b1a   auth-service     running   —            120s       2024-01-15 14:31
 ```
 
 **How it works:**
-1. `tinker watch start` spawns a detached process (`start_new_session=True`) that survives terminal close
-2. Process state (PID + `started_at`) is written to `~/.tinker/tinker.db`
-3. Each tick computes a hash of the current anomaly set; Slack is notified only when the hash changes
-4. `tinker watch stop` sends SIGTERM to the daemon; status is updated in the DB
-5. `tinker watch clean` removes dead PIDs (verified with `os.kill(pid, 0)` + `started_at` comparison, not PID alone)
+1. `tinker watch start` calls `POST /api/v1/watches` on the server
+2. The server starts an asyncio task that polls `detect_anomalies` every `interval` seconds
+3. A SHA-256 hash of the current anomaly set is compared to the previous tick — Slack is only notified when the set changes
+4. Watch state is persisted in the server's SQLite DB (`~/.tinker/tinker.db`) and resumed on server restart
+5. `tinker watch stop` calls `DELETE /api/v1/watches/{id}`, cancelling the asyncio task
 
 **Slack message format:**
 ```
-🔔 Tinker Watch — anomalies detected in payments-api
+*Tinker Watch* — `payments-api`  [watch-a3f2b1c4]
 
-🟠 [HIGH] error_count — 847 errors in 10m (threshold: 10)
-🟡 [MEDIUM] latency_p99 — 2.4s avg in 10m (threshold: 1s)
-
-Detected at 2024-01-15 14:32 UTC
-Reply explain <n> in thread or run tinker monitor payments-api
+• *HIGH* `error_count` — 847 errors in 10m (threshold: 10)
+• *MEDIUM* `latency_p99` — 2.4s avg (threshold: 1s)
 ```
 
-Requires `SLACK_BOT_TOKEN` in `.env`. If not set, the watch still runs and logs to `~/.tinker/logs/<watch-id>.log`.
+Requires `SLACK_BOT_TOKEN` in `.env`.
 
 ---
 
 ### Other commands
 
 ```bash
-# ── Incident analysis (full LLM RCA) ──────────────────────────────────────
-tinker analyze payments-api                           # RCA for the last hour
-tinker analyze payments-api --since 2h               # look back further
-tinker analyze payments-api --since 2h -v            # stream agent reasoning
-tinker analyze payments-api --deep                   # extended thinking (slower, thorough)
+# ── Incident analysis (full LLM RCA) ──────────────────────────────────────────
+tinker analyze payments-api                        # RCA for the last hour
+tinker analyze payments-api --since 2h             # look back further
+tinker analyze payments-api --since 2h -v          # stream agent reasoning
+tinker analyze payments-api --deep                 # extended thinking
 
-# ── Fix (from analyze output) ──────────────────────────────────────────────
-tinker fix INC-abc123                                # show the proposed fix
-tinker fix INC-abc123 --approve                      # apply fix and open a GitHub PR
+# ── Fix (from analyze output) ─────────────────────────────────────────────────
+tinker fix INC-abc123                              # show proposed fix
+tinker fix INC-abc123 --approve                    # apply and open PR
 
-# ── Stream live logs ───────────────────────────────────────────────────────
-tinker tail payments-api                             # all logs, live
-tinker tail payments-api -q 'level:ERROR'            # errors only
+# ── Stream live logs ──────────────────────────────────────────────────────────
+tinker tail payments-api
+tinker tail payments-api -q 'level:ERROR'
 tinker tail payments-api -q 'level:(ERROR OR WARN) AND "timeout"'
 tinker tail payments-api --resource ecs -q 'level:ERROR'
 
-# ── Fetch logs (no AI) ─────────────────────────────────────────────────────
-tinker logs payments-api                             # recent logs
+# ── Fetch logs (no AI) ────────────────────────────────────────────────────────
+tinker logs payments-api
 tinker logs payments-api -q 'level:ERROR' --since 30m
-tinker logs payments-api -q 'level:ERROR' --since 1h -n 200
 tinker logs payments-api --resource lambda -q '"cold start"'
-tinker logs payments-api --resource rds -q 'level:ERROR AND "deadlock"'
 
-# ── Metrics ────────────────────────────────────────────────────────────────
+# ── Metrics ───────────────────────────────────────────────────────────────────
 tinker metrics payments-api Errors --since 2h
-tinker metrics payments-api Errors --resource ecs
-```
-
-### Mode override
-
-`tinker.toml` sets the default mode. Override it per-command with `--mode`:
-
-```bash
-tinker --mode local  anomaly payments-api --since 2h
-tinker --mode server monitor payments-api
+tinker metrics payments-api http_requests_total --resource ecs
 ```
 
 ---
@@ -274,70 +248,49 @@ tinker --mode server monitor payments-api
 
 One query syntax works on every backend. Tinker translates it to CloudWatch Logs Insights, LogQL, GCP filter, KQL, Datadog search, or Elasticsearch DSL automatically.
 
-### Operators
-
 | Pattern | Meaning |
 |---|---|
 | `level:ERROR` | Field match |
 | `level:(ERROR OR WARN)` | Multi-value OR |
 | `"connection timeout"` | Exact phrase |
 | `timeout` | Substring match |
-| `level:ERROR AND "timeout"` | AND (explicit) |
-| `level:ERROR "timeout"` | AND (implicit) |
+| `level:ERROR AND "timeout"` | AND |
 | `NOT "health check"` | Negation |
-| `(level:ERROR OR level:WARN) AND service:payments-api` | Grouped |
 
 Field aliases: `severity` → `level`, `svc`/`app` → `service`, `msg` → `message`, `trace` → `trace_id`
 
 ### Targeting infrastructure resources
 
-Use `--resource TYPE` (or `-r TYPE`) to tell Tinker which infrastructure resource to query. Without it each backend auto-discovers or uses its default.
+Use `--resource TYPE` (or `-r TYPE`) to route queries to a specific log group / resource type. Without it each backend uses its default.
 
 ```bash
 tinker logs payments-api --resource ecs -q 'level:ERROR'
-tinker logs my-function --resource lambda -q '"cold start"'
+tinker logs my-function  --resource lambda
 tinker tail payments-api --resource eks
 ```
 
-| `--resource` | CloudWatch log group | GCP resource.type | Azure KQL table | Loki label | ES index |
+| `--resource` | CloudWatch log group | GCP resource.type | Azure table | Loki label | ES index |
 |---|---|---|---|---|---|
 | `lambda` | `/aws/lambda/{svc}` | `cloud_function` | `FunctionAppLogs` | `resource="lambda"` | `lambda-*` |
 | `ecs` | `/ecs/{svc}` | `cloud_run_revision` | `ContainerLog` | `resource="container"` | `ecs-*` |
 | `eks` / `k8s` | `/aws/containerinsights/{svc}/application` | `k8s_container` | `ContainerLog` | `resource="container"` | `kubernetes-*` |
-| `ec2` / `vm` / `host` | `/aws/ec2/{svc}` | `gce_instance` | `Syslog` | `resource="host"` | `syslog-*` |
+| `ec2` / `vm` | `/aws/ec2/{svc}` | `gce_instance` | `Syslog` | `resource="host"` | `syslog-*` |
 | `rds` / `db` | `/aws/rds/instance/{svc}/postgresql` | `cloudsql_database` | `AzureDiagnostics` | `resource="db"` | `rds-*` |
-| `apigw` | `API-Gateway-Execution-Logs_{svc}/prod` | — | `ApiManagementGatewayLogs` | `resource="apigw"` | `apigw-*` |
-| `cloudrun` | `/ecs/{svc}` | `cloud_run_revision` | `ContainerLog` | `resource="container"` | `ecs-*` |
-| `gke` / `aks` | `/aws/containerinsights/{svc}/application` | `k8s_container` | `ContainerLog` | `resource="container"` | `kubernetes-*` |
-| `appservice` | — | — | `AppServiceConsoleLogs` | `resource="container"` | `appservice-*` |
-| (none) | auto-discover | `cloud_run_revision` | `AppTraces` | — | `logs-*` |
 
-Cross-cloud aliases work — `--resource lambda` on GCP maps to `cloud_function`, `--resource ecs` on Azure maps to `ContainerLog`. You never change flags when switching backends.
-
-### How queries map to native syntax
-
-| Tinker | CloudWatch Insights | LogQL | GCP filter | KQL |
-|---|---|---|---|---|
-| `level:ERROR` | `level = 'ERROR'` | `{level="ERROR"}` | `severity="ERROR"` | `SeverityLevel == "Error"` |
-| `"timeout"` | `@message like /timeout/` | `\|= \`timeout\`` | `textPayload:"timeout"` | `Message contains "timeout"` |
-| `--resource ecs` | log group `/ecs/{svc}` | `{resource="container"}` | `resource.type="cloud_run_revision"` | table `ContainerLog` |
-
-Raw native queries (LogQL `{...}`, Insights `| filter ...`, KQL `| where ...`) are accepted unchanged.
+Cross-cloud aliases work — `--resource lambda` on GCP maps to `cloud_function`.
 
 ---
 
 ## Supported backends
 
-| Backend | Logs | Metrics | Traces | Auth |
+| Backend | `TINKER_BACKEND` | Logs | Metrics | Auth |
 |---|---|---|---|---|
-| `cloudwatch` | CloudWatch Logs Insights | CloudWatch Metrics | X-Ray | IAM Task Role |
-| `gcp` | Cloud Logging | Cloud Monitoring | Cloud Trace | Workload Identity |
-| `azure` | Log Analytics / KQL | Azure Monitor Metrics | App Insights | Managed Identity |
-| `grafana` | Loki / LogQL | Prometheus / PromQL | Tempo | API key |
-| `datadog` | Logs API v2 | Metrics API v1 | APM Traces | API key + App key |
-| `elastic` | Elasticsearch / OpenSearch | Aggregations | APM | API key |
-
-Set `TINKER_BACKEND` to select the active backend.
+| AWS CloudWatch | `cloudwatch` | Logs Insights | CloudWatch Metrics | IAM Task Role |
+| GCP | `gcp` | Cloud Logging | Cloud Monitoring | Workload Identity |
+| Azure | `azure` | Log Analytics / KQL | Azure Monitor | Managed Identity |
+| Grafana Stack | `grafana` | Loki / LogQL | Prometheus / PromQL | API key |
+| Datadog | `datadog` | Logs API v2 | Metrics API v1 | API key + App key |
+| Elastic / OpenSearch | `elastic` | Elasticsearch DSL | Aggregations | API key |
 
 ---
 
@@ -348,107 +301,93 @@ Uses [LiteLLM](https://github.com/BerriAI/litellm) — swap providers by changin
 | Provider | `TINKER_DEFAULT_MODEL` | Key variable |
 |---|---|---|
 | Anthropic | `anthropic/claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
-| OpenRouter | `openrouter/anthropic/claude-opus-4-6` | `OPENROUTER_API_KEY` |
+| OpenRouter | `openrouter/anthropic/claude-sonnet-4-6` | `OPENROUTER_API_KEY` |
 | OpenAI | `openai/gpt-4o` | `OPENAI_API_KEY` |
 | Groq | `groq/llama-3.1-70b-versatile` | `GROQ_API_KEY` |
-| Ollama (local) | `ollama/llama3` | — |
 
 ---
 
-## Live log streaming — `tinker tail`
+## Deployment
 
-Streams new entries as they arrive. Uses native streaming where the backend supports it, falls back to polling otherwise.
+The simplest deployment is `pip install tinker-agent && tinker server` on any machine that has cloud access — an EC2 instance with an IAM role, a Cloud Run instance with a Workload Identity, a VM with Managed Identity, or your own laptop.
 
-| Backend | Mechanism | Latency |
-|---|---|---|
-| `grafana` / Loki | Websocket (`/loki/api/v1/tail`) | Real-time |
-| `cloudwatch` | Poll every N seconds | ≈ poll interval |
-| `gcp` | Poll every N seconds | ≈ poll interval |
-| `azure` | Poll every N seconds | ≈ poll interval |
-| `datadog` | Poll every N seconds | ≈ poll interval |
-| `elastic` | Poll every N seconds | ≈ poll interval |
+### AWS (EC2 / ECS)
 
 ```bash
-tinker tail <service>                              # all logs
-tinker tail <service> -q 'level:ERROR'             # filtered
-tinker tail <service> --poll 5                     # poll every 5s
+# 1. Launch EC2 with an IAM role attached (see permissions below)
+# 2. SSH in and:
+pip install tinker-agent
+tinker init server      # detects AWS automatically, verifies CloudWatch access
+tinker server           # or: nohup tinker server &
+
+# Or run as a systemd service:
+# [Unit] Description=Tinker Server
+# [Service] ExecStart=tinker server
+#           EnvironmentFile=/etc/tinker/.env
+# [Install] WantedBy=multi-user.target
 ```
 
----
-
-## Deploy a Tinker server
-
-**Local mode** needs no server. The rest of this section is for teams who want shared access, Slack alerts, the monitoring loop, and the Claude Code MCP integration.
-
-The server is deployed with your team's existing infra tooling — Helm, Terraform, or Docker Compose. Run `tinker init` → Deploy to generate the config files, then deploy them through your normal process.
-
-### Prerequisites
-
-| Requirement | Helm | Terraform | Docker Compose |
-|---|---|---|---|
-| `kubectl` + cluster access | ✓ | — | — |
-| `helm` v3+ | ✓ | — | — |
-| `terraform` v1.5+ | — | ✓ | — |
-| `docker` + `docker compose` | — | — | ✓ |
-| Cloud CLI (`aws`/`gcloud`/`az`) | for secrets setup | ✓ | for secrets setup |
-| Admin cloud credentials | for IAM/secrets setup | ✓ | for secrets setup |
-
-### Helm (EKS / GKE / AKS)
-
-```bash
-tinker init          # pick "Deploy" → "Helm on EKS/GKE/AKS"
-                     # → writes tinker-values.yaml
-
-# Store secrets (wizard prints exact commands per cloud), then:
-kubectl create secret generic tinker-secrets \
-  --from-literal=anthropic-api-key=sk-ant-... \
-  --from-literal=api-keys='[{"hash":"...","subject":"default","roles":["sre"]}]'
-
-helm install tinker ./deploy/helm/tinker -f tinker-values.yaml
-
-kubectl get svc tinker   # get the URL, add to tinker.toml [server] url
+**Required IAM permissions:**
+```json
+{
+  "Statement": [
+    { "Effect": "Allow", "Action": [
+        "logs:StartQuery", "logs:GetQueryResults", "logs:DescribeLogGroups",
+        "logs:FilterLogEvents", "logs:GetLogEvents"
+      ], "Resource": "*" },
+    { "Effect": "Allow", "Action": [
+        "cloudwatch:GetMetricData", "cloudwatch:ListMetrics"
+      ], "Resource": "*" }
+  ]
+}
 ```
 
-For IRSA (EKS), Workload Identity (GKE), or Azure Workload Identity (AKS) — add the annotation to `serviceAccount.annotations` in your values file. Examples are in [deploy/helm/tinker/values.yaml](deploy/helm/tinker/values.yaml).
-
-### Terraform (ECS Fargate / Cloud Run / Container Apps)
+### GCP (Cloud Run / GCE)
 
 ```bash
-tinker init          # pick "Deploy" → "Terraform — ..."
-                     # → writes tinker.tfvars
-
-cd deploy/terraform/aws     # or gcp / azure
-terraform init && terraform apply -var-file=../../../tinker.tfvars
-
-terraform output service_url   # add to tinker.toml [server] url
+# Deploy as Cloud Run service with a service account bound to:
+#   roles/logging.viewer  +  roles/monitoring.viewer
+gcloud run deploy tinker \
+  --image gcr.io/your-project/tinker-agent \
+  --service-account tinker@your-project.iam.gserviceaccount.com \
+  --set-env-vars TINKER_BACKEND=gcp,GCP_PROJECT_ID=your-project
 ```
 
-Modules are in [`deploy/terraform/`](deploy/terraform/). Each creates the compute resource, IAM role, secrets manager wiring, and role assignments.
-
-### Docker Compose (self-hosted)
+### Azure (Container Apps / VM)
 
 ```bash
-tinker init          # pick "Deploy" → "Docker Compose"
-                     # → writes tinker-server.env
+# Enable system-assigned managed identity, then assign:
+#   Monitoring Reader  +  Log Analytics Reader
+az role assignment create --assignee <MANAGED_IDENTITY_PRINCIPAL_ID> \
+  --role "Monitoring Reader" --scope /subscriptions/SUBSCRIPTION_ID
+```
 
-cp tinker-server.env deploy/.env
+### Self-hosted / Docker
+
+```bash
+cp .env.example .env      # fill in TINKER_BACKEND + credentials
 docker compose -f deploy/docker-compose.yml up -d
+# Starts Tinker server + Loki + Prometheus + Grafana for local testing
 ```
 
-### Secrets
+### Managing API keys
 
-| Cloud | Service | Keys |
-|---|---|---|
-| AWS | Secrets Manager | `tinker/anthropic-api-key`, `tinker/api-keys` |
-| GCP | Secret Manager | `tinker-anthropic-api-key`, `tinker-api-keys` |
-| Azure | Key Vault | `anthropic-api-key`, `tinker-api-keys` |
-| Self-hosted | `.env` (not committed) | plain env vars |
+```bash
+# Generate (tinker init server does this automatically)
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# Hash it — store the hash in TINKER_API_KEYS, give the raw key to CLI users
+python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" <raw-key>
+
+# TINKER_API_KEYS format in .env:
+TINKER_API_KEYS='[{"hash":"<sha256>","subject":"alice","roles":["oncall"]}]'
+```
 
 ---
 
 ## Claude Code (remote MCP)
 
-Once the server is deployed, add Tinker as a remote MCP server in `.claude/settings.json`:
+Once the server is running, add it as a remote MCP server in `.claude/settings.json`:
 
 ```json
 {
@@ -468,8 +407,6 @@ Claude can then call `query_logs`, `get_metrics`, `detect_anomalies`, `search_co
 
 ## Slack bot
 
-Invite `@tinker` to any channel:
-
 ```
 /tinker-analyze <service> since=2h
 /tinker-fix INC-abc123
@@ -477,50 +414,34 @@ Invite `@tinker` to any channel:
 /tinker-status
 ```
 
-The bot posts proactive alerts when the monitoring loop detects anomalies. Alerts include inline buttons: **Get Fix** / **Approve** / **Dismiss**.
+The bot posts proactive alerts from `tinker watch` tasks. Requires `SLACK_BOT_TOKEN` in `.env`.
 
 ---
 
-## How it works
+## Configuration reference
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  Tinker Server  (deployed once — optional for team use)          │
-│                                                                  │
-│  POST /api/v1/analyze  ──► SSE streaming RCA                     │
-│  GET  /mcp/sse         ──► Remote MCP for Claude Code            │
-│  POST /slack/events    ──► Slack bot                             │
-│                                                                  │
-│  TINKER_BACKEND=cloudwatch|gcp|azure|grafana|datadog|elastic     │
-│  Credentials → cloud-native identity. Zero long-lived keys.      │
-└───────────────────────┬──────────────────────────────────────────┘
-                        │  API key
-          ┌─────────────┼──────────────────┐
-          ▼             ▼                  ▼
-       CLI           Claude Code        Slack Bot
-      (thin)         remote MCP         (webhook)
-```
+`tinker init server` writes all of this automatically. For manual configuration:
 
-**Local mode** — CLI talks directly to the cloud using your laptop credentials. No server needed.
+### Server
 
-**Server mode** — CLI and Slack bot authenticate to the server with a short API key. The server holds the IAM role / Managed Identity — your laptop never needs cloud credentials.
+| Variable | Description | Default |
+|---|---|---|
+| `TINKER_BACKEND` | Active backend | `cloudwatch` |
+| `ANTHROPIC_API_KEY` | or `OPENROUTER_API_KEY` / `OPENAI_API_KEY` / `GROQ_API_KEY` | — |
+| `TINKER_DEFAULT_MODEL` | Model for triage | `anthropic/claude-sonnet-4-6` |
+| `TINKER_DEEP_RCA_MODEL` | Model for `--deep` | `anthropic/claude-opus-4-6` |
+| `TINKER_API_KEYS` | JSON array of hashed keys | `[]` |
+| `TINKER_SERVER_PORT` | Bind port | `8000` |
+| `TINKER_SERVER_HOST` | Bind host | `0.0.0.0` |
+| `TINKER_REPO_PATH` | Path to service codebase for `fix` | — |
 
----
+### CLI
 
-## Configuration
-
-`tinker init` writes all of this for you. For manual configuration:
-
-### Core
-
-| Variable | Description |
+| File / Variable | Description |
 |---|---|
-| `TINKER_BACKEND` | Active backend: `cloudwatch` `gcp` `azure` `grafana` `datadog` `elastic` |
-| `ANTHROPIC_API_KEY` | or `OPENROUTER_API_KEY` / `OPENAI_API_KEY` / `GROQ_API_KEY` |
-| `TINKER_DEFAULT_MODEL` | e.g. `anthropic/claude-sonnet-4-6` |
-| `TINKER_DEEP_RCA_MODEL` | Model for `--deep` analysis, e.g. `anthropic/claude-opus-4-6` |
-| `TINKER_API_KEYS` | JSON array of hashed keys — server mode only |
-| `TINKER_SERVER_PORT` | Default `8000` |
+| `~/.tinker/config` | Server URL — written by `tinker init cli` |
+| `TINKER_SERVER_URL` | Override server URL (env var) |
+| `TINKER_API_TOKEN` | API token — add to shell profile |
 
 ### Per-backend
 
@@ -528,25 +449,12 @@ The bot posts proactive alerts when the monitoring loop detects anomalies. Alert
 |---|---|
 | `cloudwatch` | `AWS_REGION` — credentials from IAM role |
 | `gcp` | `GCP_PROJECT_ID` — credentials from Workload Identity |
-| `azure` | `AZURE_LOG_ANALYTICS_WORKSPACE_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP` |
-| `grafana` | `GRAFANA_LOKI_URL`, `GRAFANA_PROMETHEUS_URL`, `GRAFANA_TEMPO_URL` |
+| `azure` | `AZURE_WORKSPACE_ID`, `AZURE_SUBSCRIPTION_ID` |
+| `grafana` | `GRAFANA_LOKI_URL`, `GRAFANA_PROMETHEUS_URL` |
 | `datadog` | `DATADOG_API_KEY`, `DATADOG_APP_KEY`, `DATADOG_SITE` |
 | `elastic` | `ELASTICSEARCH_URL`, `ELASTICSEARCH_API_KEY` |
 
 See [.env.example](.env.example) for the full reference.
-
-### Managing API keys (server mode)
-
-```bash
-# Generate a new key
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-
-# Hash it (store the hash on the server, give the raw key to the client)
-python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" <raw-key>
-
-# Add to TINKER_API_KEYS on the server
-TINKER_API_KEYS='[{"hash":"<sha256>","subject":"alice","roles":["sre"]}]'
-```
 
 ---
 
@@ -554,67 +462,35 @@ TINKER_API_KEYS='[{"hash":"<sha256>","subject":"alice","roles":["sre"]}]'
 
 | Concern | How Tinker handles it |
 |---|---|
-| Cloud credentials | Never stored — server uses IAM role / Workload Identity / Managed Identity |
-| Client auth | API keys (SHA-256 hashed at rest) |
-| Destructive operations | `apply_fix` and `create_pr` require explicit `/approve` — blocked by default in Claude Code |
-| RBAC | Slack commands gated by user group → role mapping |
+| Cloud credentials | Never on the CLI — server uses cloud-native identity |
+| Client auth | Short API tokens, SHA-256 hashed at rest |
+| Destructive operations | `apply_fix` and `create_pr` require explicit human approval |
+| RBAC | Slack commands gated by role mapping |
 | Prompt injection | Log content sanitized before inclusion in any LLM prompt |
-| Fix safety | Proposed diffs scanned with Semgrep before being shown to the user |
 | Secrets in logs | Credentials stripped from all log data before LLM submission |
 
 ---
 
 ## Local development
 
-The [`local-dev/`](local-dev/) directory runs a complete observability stack locally — no cloud account needed.
-
-### Stack
-
-| Service | Port | Purpose |
-|---|---|---|
-| `payments-api` | 7001 | Dummy microservice — emits structured logs at all levels + Prometheus metrics |
-| `loki` | 3100 | Log storage |
-| `prometheus` | 9090 | Metrics |
-| `grafana` | 3000 | Dashboards |
-
-The Tinker server is **not** in this compose — run it from your IDE for hot reload and breakpoints.
-
-### Setup
+The [`local-dev/`](local-dev/) directory runs a full observability stack locally with no cloud account.
 
 ```bash
-# 1. Start the stack
+# 1. Start Loki + Prometheus + Grafana + a dummy payments-api
 cd local-dev && ./run.sh
 
-# 2. Start the Tinker server (separate terminal)
+# 2. Start Tinker server (separate terminal)
 cp .env.example .env
 # Set: TINKER_BACKEND=grafana, GRAFANA_LOKI_URL=http://localhost:3100, ANTHROPIC_API_KEY=...
-uv run tinker-server
+tinker server
 
-# 3. Generate traffic
-./generate_traffic.sh           # steady mixed traffic (Ctrl-C to stop)
-./generate_traffic.sh incident  # simulate an error spike
-./generate_traffic.sh burst     # 100 rapid requests
+# 3. Point CLI at it
+tinker init cli   # URL: http://localhost:8000
 
-# 4. Query
-tinker tail payments-api -q 'level:ERROR'
-tinker analyze payments-api --since 5m -v
-tinker logs payments-api -q 'level:ERROR AND "timeout"'
-```
-
-### Dummy service endpoints
-
-| Endpoint | Emits |
-|---|---|
-| `GET /pay` | Random weighted scenario |
-| `GET /pay/ok` | INFO — successful payment |
-| `GET /pay/error` | ERROR — payment failed |
-| `GET /pay/slow` | WARN — slow database query |
-| `GET /pay/critical` | CRITICAL — circuit breaker open |
-| `GET /metrics` | Prometheus metrics |
-| `GET /health` | Health check |
-
-```bash
-cd local-dev && ./run.sh down   # tear down
+# 4. Generate traffic and query
+./generate_traffic.sh incident
+tinker anomaly payments-api --since 5m
+tinker monitor payments-api
 ```
 
 ---
@@ -625,8 +501,8 @@ cd local-dev && ./run.sh down   # tear down
 uv sync
 uv run pytest                    # all tests
 uv run pytest tests/test_query/  # query translator tests
-uv run ruff check src/           # lint
-uv run mypy src/                 # type check
+uv run ruff check src/
+uv run mypy src/
 ```
 
 ---
