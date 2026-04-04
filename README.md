@@ -405,15 +405,93 @@ Claude can then call `query_logs`, `get_metrics`, `detect_anomalies`, `search_co
 
 ---
 
+## GitHub integration (code investigation + auto-PRs)
+
+The `fix` and `approve` commands require a GitHub token so the server can read your code and open PRs — no local clone needed.
+
+### 1. Create a token
+
+Go to **GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens** (recommended) or classic tokens.
+
+Required scopes:
+- **Contents** — read (to fetch files, search code)
+- **Commits** — read (for `get_commits`)
+- **Pull requests** — write (to open fix PRs)
+- **Metadata** — read (always required)
+
+```bash
+# Classic PAT — minimum scopes: repo (full)
+# Fine-grained PAT — scopes listed above, scoped to specific repos
+```
+
+### 2. Add to server config
+
+`tinker init server` asks for this interactively. For manual setup, add to `~/.tinker/.env`:
+
+```bash
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+
+# Single repo (simplest)
+GITHUB_REPO=your-org/your-repo
+
+# Multiple repos — map each service to its repo
+# The server picks the right repo from the service name in the anomaly
+GITHUB_REPOS='{"payments-api":"acme/payments","auth-service":"acme/auth","orders-api":"acme/orders"}'
+```
+
+If a service isn't in `GITHUB_REPOS`, the server falls back to `GITHUB_REPO`. If neither is set, `fix` returns a 422 with a clear error message.
+
+### Bitbucket / GitLab
+
+Bitbucket and GitLab provider support is not yet built in. As a workaround:
+- Mirror your repos to GitHub and point `GITHUB_REPO` there, **or**
+- Use a GitHub Actions / GitLab CI bridge that syncs on push
+
+Native Bitbucket and GitLab providers are planned — contributions welcome.
+
+---
+
 ## Slack bot
 
-```
-/tinker-monitor <service> since=2h
-/tinker-approve INC-abc123          (requires oncall role)
-/tinker-status
+### 1. Create a Slack app
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
+2. Under **OAuth & Permissions** → **Bot Token Scopes**, add:
+   - `chat:write` — post messages
+   - `channels:read` — resolve channel names
+   - `commands` — receive slash commands
+3. Under **Slash Commands**, create:
+   - `/tinker-monitor` — `Analyze a service`
+   - `/tinker-approve` — `Approve a pending fix`
+   - `/tinker-status` — `Show server status`
+4. Under **Event Subscriptions** → enable, set Request URL to `https://tinker.your-company.internal/slack/events`
+5. **Install to workspace** → copy the **Bot User OAuth Token** (`xoxb-...`)
+6. Copy the **Signing Secret** from **Basic Information**
+
+### 2. Add to server config
+
+`tinker init server` asks for these interactively. For manual setup, add to `~/.tinker/.env`:
+
+```bash
+SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx
+SLACK_SIGNING_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+SLACK_ALERTS_CHANNEL=#incidents    # default channel for watch alerts
 ```
 
-The bot posts proactive alerts from `tinker watch` tasks. Requires `SLACK_BOT_TOKEN` in `.env`.
+### 3. Usage
+
+```
+/tinker-monitor payments-api since=2h    # open monitor session
+/tinker-approve INC-abc123               # approve a fix (requires oncall role)
+/tinker-status                           # show connected backend + version
+```
+
+Watch alerts are posted automatically when `tinker watch start <service>` detects a new anomaly.
+
+To give a Slack user the `oncall` role, include it in the API key entry they use:
+```bash
+TINKER_API_KEYS='[{"hash":"<sha256>","subject":"alice","roles":["oncall"]}]'
+```
 
 ---
 
@@ -432,7 +510,9 @@ The bot posts proactive alerts from `tinker watch` tasks. Requires `SLACK_BOT_TO
 | `TINKER_API_KEYS` | JSON array of hashed keys | `[]` |
 | `TINKER_SERVER_PORT` | Bind port | `8000` |
 | `TINKER_SERVER_HOST` | Bind host | `0.0.0.0` |
-| `TINKER_REPO_PATH` | Path to service codebase for `fix` | — |
+| `GITHUB_TOKEN` | GitHub PAT (repo scope) for code investigation and auto-PRs | — |
+| `GITHUB_REPO` | Default repository (`owner/repo`) | — |
+| `GITHUB_REPOS` | JSON map of service → repo: `{"payments-api":"acme/payments"}` | `{}` |
 
 ### CLI
 

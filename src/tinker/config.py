@@ -115,10 +115,12 @@ class TinkerConfig(BaseSettings):
 
     # ── GitHub ────────────────────────────────────────────────────────────────
     github_token: SecretStr | None = None
+    # Single repo (simple case): org/repo
     github_repo: str | None = None
-
-    # ── Codebase ──────────────────────────────────────────────────────────────
-    tinker_repo_path: str | None = Field(None, alias="TINKER_REPO_PATH")
+    # Multiple repos (JSON map of service → org/repo):
+    # GITHUB_REPOS='{"payments-api":"acme/payments","auth-service":"acme/auth"}'
+    # If set, takes priority over GITHUB_REPO for service-specific lookups.
+    github_repos: str = Field("{}", alias="GITHUB_REPOS")
 
     # ── Local state (sessions, watches) ──────────────────────────────────────
     # Default: ~/.tinker/tinker.db

@@ -84,7 +84,7 @@ class MonitorREPL:
         self._anomalies: list[Anomaly] = []
         self._filtered: list[Anomaly] = []
         self._severity_filter: str | None = None
-        self._pending_fix: dict | None = None          # {diff, explanation, anomaly_idx}
+        self._pending_fix: dict | None = None          # {file_changes, explanation, diff, anomaly_idx}
         self._session_id: str | None = None
 
         from tinker.store.db import TinkerDB
@@ -315,20 +315,21 @@ class MonitorREPL:
             console.print("[red]No pending fix. Run 'fix <n>' first.[/red]")
             return
 
-        diff = self._pending_fix.get("diff", "")
+        file_changes = self._pending_fix.get("file_changes", [])
         explanation = self._pending_fix.get("explanation", "")
 
-        if not diff:
-            console.print("[red]Pending fix has no diff.[/red]")
+        if not file_changes:
+            console.print("[red]Pending fix has no file changes.[/red]")
             return
 
-        confirmed = _confirm("Apply fix and open a GitHub PR?")
+        paths = ", ".join(c["path"] for c in file_changes)
+        confirmed = _confirm(f"Apply fix to {paths} and open a GitHub PR?")
         if not confirmed:
             console.print("[dim]Aborted.[/dim]")
             return
 
         with console.status("[bold green]Applying fix on server...[/bold green]"):
-            result = await self._client.approve_fix(diff, explanation, self._service)
+            result = await self._client.approve_fix(file_changes, explanation, self._service)
 
         self._pending_fix = None
         self._persist_session()

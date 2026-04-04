@@ -213,11 +213,16 @@ class RemoteClient:
             resp.raise_for_status()
         return resp.json()
 
-    async def approve_fix(self, diff: str, explanation: str, service: str) -> dict[str, Any]:
-        """Apply a staged diff on the server and open a PR."""
+    async def approve_fix(
+        self,
+        file_changes: list[dict[str, str]],
+        explanation: str,
+        service: str,
+    ) -> dict[str, Any]:
+        """Apply staged file changes on the server and open a GitHub PR."""
         async with self._client(timeout=_FIX_TIMEOUT) as c:
             resp = await c.post("/api/v1/approve", json={
-                "diff": diff,
+                "file_changes": file_changes,
                 "explanation": explanation,
                 "service": service,
             })

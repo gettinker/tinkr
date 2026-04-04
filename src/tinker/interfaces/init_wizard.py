@@ -393,18 +393,64 @@ class ServerWizard:
 
     def _step_github(self) -> None:
         console.print()
-        console.print(Rule("[bold]Step 4 — GitHub (optional, for auto-PRs)[/bold]"))
+        console.print(Rule("[bold]Step 4 — GitHub (for code investigation and auto-PRs)[/bold]"))
+        console.print()
+        console.print(
+            "[dim]Tinker uses GitHub to read code (stack trace files, search, commits)\n"
+            "and to open fix PRs. Without this, [bold]fix[/bold] and [bold]approve[/bold] won't work.[/dim]"
+        )
         console.print()
 
-        if not _ask_yes_no("Set up GitHub integration?", default=False):
+        if not _ask_yes_no("Set up GitHub integration?", default=True):
+            console.print("[yellow]! Skipped — fix and approve commands will be unavailable.[/yellow]")
             return
 
-        token = input("GitHub token (ghp_...): ").strip()
-        repo = input("Repository (owner/repo): ").strip()
-        if token:
-            self._env["GITHUB_TOKEN"] = token
-        if repo:
-            self._env["GITHUB_REPO"] = repo
+        token = input("GitHub token (ghp_... or classic PAT with repo scope): ").strip()
+        if not token:
+            console.print("[yellow]! No token entered — skipping GitHub setup.[/yellow]")
+            return
+
+        # Validate token
+        console.print("[dim]Validating token...[/dim]")
+        try:
+            from github import Github
+            gh = Github(token)
+            user = gh.get_user().login
+            console.print(f"[green]✓ Authenticated as:[/green] {user}")
+        except Exception as exc:
+            console.print(f"[yellow]! Token validation failed: {str(exc)[:60]}[/yellow]")
+            console.print("[dim]Continuing anyway — check the token if fix/approve fail.[/dim]")
+
+        self._env["GITHUB_TOKEN"] = token
+
+        # Collect repos — one default + optional service-specific overrides
+        console.print()
+        console.print(
+            "[dim]Enter the default repository (used when no service-specific mapping exists).[/dim]"
+        )
+        default_repo = input("Default repository (owner/repo): ").strip()
+        if default_repo:
+            self._env["GITHUB_REPO"] = default_repo
+
+        # Service-specific repos
+        console.print()
+        console.print(
+            "[dim]If different services live in different repos, add per-service mappings.\n"
+            "Example: payments-api → acme/payments, auth-service → acme/auth[/dim]"
+        )
+        if _ask_yes_no("Add service-specific repo mappings?", default=False):
+            repos_map: dict[str, str] = {}
+            while True:
+                svc = input("  Service name (or Enter to finish): ").strip()
+                if not svc:
+                    break
+                repo = input(f"  Repo for {svc} (owner/repo): ").strip()
+                if repo:
+                    repos_map[svc] = repo
+                    console.print(f"  [green]✓[/green] {svc} → {repo}")
+            if repos_map:
+                import json
+                self._env["GITHUB_REPOS"] = json.dumps(repos_map)
 
     def _step_api_key(self) -> None:
         console.print()
