@@ -9,7 +9,6 @@ from typing import Optional
 import structlog
 import typer
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
@@ -24,6 +23,23 @@ app = typer.Typer(
 )
 console = Console()
 log = structlog.get_logger(__name__)
+
+
+def _run(coro) -> None:
+    """Run a coroutine, printing server errors cleanly instead of a traceback."""
+    import httpx
+    try:
+        asyncio.run(coro)
+    except httpx.HTTPStatusError as exc:
+        try:
+            detail = exc.response.json().get("detail", str(exc))
+        except Exception:
+            detail = str(exc)
+        console.print(f"[red]Server error:[/red] {detail}")
+        raise typer.Exit(1)
+    except Exception as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
 
 SEVERITY_COLORS = {
     "critical": "bold red",
@@ -122,44 +138,7 @@ def init_cli() -> None:
 @app.command()
 def doctor() -> None:
     """[bold cyan]Verify connectivity to the configured Tinker server.[/bold cyan]"""
-    asyncio.run(_doctor())
-
-
-# ── Analysis commands ─────────────────────────────────────────────────────────
-
-@app.command()
-def analyze(
-    service: str = typer.Argument(..., help="Service or application name"),
-    since: str = typer.Option("1h", "--since", "-s", help="Time window: 1h, 30m, 2d"),
-    deep: bool = typer.Option(False, "--deep", help="Use deep RCA model with extended thinking"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Stream agent reasoning"),
-) -> None:
-    """[bold cyan]Analyze a service for incidents and produce a root cause report.[/bold cyan]
-
-    Examples:
-
-      tinker analyze payments-api
-      tinker analyze auth-service --since 2h --verbose
-      tinker analyze orders-api --deep
-    """
-    asyncio.run(_analyze(service, since, deep, verbose))
-
-
-@app.command()
-def fix(
-    incident_id: str = typer.Argument(..., help="Incident ID from a previous analyze run"),
-    approve: bool = typer.Option(
-        False, "--approve", help="Apply the fix and open a PR (requires explicit flag)"
-    ),
-) -> None:
-    """[bold cyan]Display or apply the suggested fix for an incident.[/bold cyan]
-
-    Examples:
-
-      tinker fix INC-abc123
-      tinker fix INC-abc123 --approve
-    """
-    asyncio.run(_fix(incident_id, approve))
+    _run(_doctor())
 
 
 @app.command()
@@ -177,7 +156,7 @@ def logs(
       tinker logs payments-api
       tinker logs payments-api --resource ecs -q "level:ERROR" --since 1h
     """
-    asyncio.run(_logs(service, query, since, limit, resource))
+    _run(_logs(service, query, since, limit, resource))
 
 
 @app.command()
@@ -194,7 +173,7 @@ def tail(
       tinker tail payments-api
       tinker tail auth-service -q 'level:(ERROR OR WARN)'
     """
-    asyncio.run(_tail(service, query, poll, resource))
+    _run(_tail(service, query, poll, resource))
 
 
 @app.command()
@@ -211,7 +190,7 @@ def metrics(
       tinker metrics payments-api Errors
       tinker metrics auth-service http_requests_total --since 2h
     """
-    asyncio.run(_metrics(service, metric, since, resource))
+    _run(_metrics(service, metric, since, resource))
 
 
 @app.command()
@@ -230,7 +209,7 @@ def anomaly(
       tinker anomaly payments-api --since 2h --severity high
       tinker anomaly payments-api --json
     """
-    asyncio.run(_anomaly(service, since, severity, resource, json_out))
+    _run(_anomaly(service, since, severity, resource, json_out))
 
 
 @app.command()
@@ -254,7 +233,7 @@ def monitor(
       tinker monitor payments-api
       tinker monitor payments-api --since 2h
     """
-    asyncio.run(_monitor_repl(service, since))
+    _run(_monitor_repl(service, since))
 
 
 # ── Watch commands ────────────────────────────────────────────────────────────
@@ -282,13 +261,13 @@ def watch_start(
       tinker watch start payments-api --channel "#incidents"
       tinker watch start auth-service --interval 120
     """
-    asyncio.run(_watch_start(service, channel, interval))
+    _run(_watch_start(service, channel, interval))
 
 
 @watch_app.command("list")
 def watch_list() -> None:
     """[bold cyan]List watches on the Tinker server.[/bold cyan]"""
-    asyncio.run(_watch_list())
+    _run(_watch_list())
 
 
 @watch_app.command("stop")
@@ -296,7 +275,7 @@ def watch_stop(
     watch_id: str = typer.Argument(..., help="Watch ID from 'tinker watch list'"),
 ) -> None:
     """[bold cyan]Stop a watch on the Tinker server.[/bold cyan]"""
-    asyncio.run(_watch_stop(watch_id))
+    _run(_watch_stop(watch_id))
 
 
 @app.command()
@@ -360,39 +339,6 @@ def _print_doctor_table(results: list[tuple[str, bool, str]]) -> None:
         console.print("[red]Some checks failed. Review the details above.[/red]")
         raise typer.Exit(1)
 
-
-async def _analyze(service: str, since: str, deep: bool, verbose: bool) -> None:
-    client = _get_client()
-    console.print(Panel(
-        f"[bold]Analyzing[/bold] [cyan]{service}[/cyan] · last {since}"
-        + (" · [yellow]deep mode[/yellow]" if deep else ""),
-        expand=False,
-    ))
-    if verbose:
-        console.print("[dim]Streaming agent reasoning...[/dim]\n")
-        async for chunk in await client.stream_analyze(service, since, deep):
-            if isinstance(chunk, str):
-                console.print(chunk, end="")
-        console.print()
-    else:
-        with console.status(f"[bold green]Running RCA on {service}...[/bold green]"):
-            report = await client.analyze(service, since, deep)
-        _print_report(report)
-
-
-async def _fix(incident_id: str, approve: bool) -> None:
-    console.print(f"[yellow]Looking up fix for[/yellow] {incident_id}...")
-    if approve:
-        confirmed = typer.confirm(
-            f"\nApply fix for {incident_id} and open a PR? This cannot be undone.",
-            default=False,
-        )
-        if not confirmed:
-            console.print("[red]Aborted.[/red]")
-            raise typer.Exit(1)
-        console.print("[green]Applying fix...[/green]")
-    else:
-        console.print("[dim]Re-run with --approve to apply.[/dim]")
 
 
 async def _logs(service: str, query: str, since: str, limit: int, resource_type: str | None = None) -> None:
@@ -594,21 +540,6 @@ async def _watch_stop(watch_id: str) -> None:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _print_report(report: object) -> None:
-    from tinker.agent.orchestrator import IncidentReport
-    assert isinstance(report, IncidentReport)
-    color = SEVERITY_COLORS.get(report.severity, "white")
-    console.print(Panel(
-        f"[{color}]SEVERITY: {report.severity.upper()}[/{color}]\n\n"
-        f"[bold]Root Cause:[/bold]\n{report.root_cause}\n\n"
-        f"[bold]Affected Services:[/bold] {', '.join(report.affected_services)}\n"
-        f"[bold]Model:[/bold] [dim]{report.model_used}[/dim]",
-        title=f"[bold]Incident Report — {report.incident_id}[/bold]",
-        border_style=color,
-    ))
-    if report.suggested_fix:
-        console.print(Markdown(f"### Suggested Fix\n\n{report.suggested_fix}"))
-        console.print(f"\n[dim]Run: tinker fix {report.incident_id} --approve to apply[/dim]")
 
 
 if __name__ == "__main__":

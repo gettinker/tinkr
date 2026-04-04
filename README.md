@@ -226,16 +226,6 @@ Requires `SLACK_BOT_TOKEN` in `.env`.
 ### Other commands
 
 ```bash
-# ── Incident analysis (full LLM RCA) ──────────────────────────────────────────
-tinker analyze payments-api                        # RCA for the last hour
-tinker analyze payments-api --since 2h             # look back further
-tinker analyze payments-api --since 2h -v          # stream agent reasoning
-tinker analyze payments-api --deep                 # extended thinking
-
-# ── Fix (from analyze output) ─────────────────────────────────────────────────
-tinker fix INC-abc123                              # show proposed fix
-tinker fix INC-abc123 --approve                    # apply and open PR
-
 # ── Stream live logs ──────────────────────────────────────────────────────────
 tinker tail payments-api
 tinker tail payments-api -q 'level:ERROR'
@@ -418,8 +408,7 @@ Claude can then call `query_logs`, `get_metrics`, `detect_anomalies`, `search_co
 ## Slack bot
 
 ```
-/tinker-analyze <service> since=2h
-/tinker-fix INC-abc123
+/tinker-monitor <service> since=2h
 /tinker-approve INC-abc123          (requires oncall role)
 /tinker-status
 ```
