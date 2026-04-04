@@ -27,13 +27,10 @@ Design notes
 from __future__ import annotations
 
 import asyncio
-import shutil
 import textwrap
-from datetime import timezone
 from typing import TYPE_CHECKING
 
 import structlog
-from rich.columns import Columns
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -41,7 +38,6 @@ from rich.syntax import Syntax
 from rich.table import Table
 
 from tinker.backends.base import Anomaly
-from tinker.monitor.summarizer import build_explain_context
 
 if TYPE_CHECKING:
     from tinker.client.remote import RemoteClient
@@ -80,14 +76,10 @@ class MonitorREPL:
         service: str,
         client: "RemoteClient",
         window_minutes: int = 60,
-        model: str | None = None,
-        repo_path: str | None = None,
     ) -> None:
         self._service = service
         self._client = client
         self._window = window_minutes
-        self._model = model or _default_model()
-        self._repo_path = repo_path or _find_repo()
 
         self._anomalies: list[Anomaly] = []
         self._filtered: list[Anomaly] = []
@@ -270,28 +262,17 @@ class MonitorREPL:
             return
 
         anomaly = self._filtered[idx - 1]
-        context_block = build_explain_context(anomaly.to_dict())
-
-        prompt = (
-            "You are an expert SRE analysing a production anomaly. "
-            "Based on the structured summary below, explain:\n"
-            "1. What is happening (root cause hypothesis)\n"
-            "2. Why it is happening (likely trigger)\n"
-            "3. Immediate impact\n"
-            "4. What to look at next\n\n"
-            "Be concise. Focus on actionable insight, not restatement of the data.\n\n"
-            "--- Anomaly Summary ---\n"
-            f"{context_block}\n"
-            "--- End Summary ---"
-        )
-
         console.print(f"\n[bold]Explaining anomaly #{idx}:[/bold] {anomaly.description}\n")
-        with console.status("[bold green]Asking LLM...[/bold green]"):
-            explanation = await _llm_complete(prompt, self._model)
+
+        chunks: list[str] = []
+        async for chunk in self._client.stream_explain(anomaly.to_dict()):
+            console.print(chunk, end="")
+            chunks.append(chunk)
+        console.print()
 
         console.print(
             Panel(
-                Markdown(explanation),
+                Markdown("".join(chunks)),
                 title=f"[bold]Explanation — {anomaly.metric}[/bold]",
                 border_style=SEVERITY_STYLE.get(anomaly.severity.lower(), "white"),
             )
@@ -306,68 +287,28 @@ class MonitorREPL:
             return
 
         anomaly = self._filtered[idx - 1]
+        console.print(f"\n[bold]Finding fix for anomaly #{idx}:[/bold] {anomaly.description}\n")
 
-        # Ensure we have a repo
-        repo_path = self._repo_path
-        if not repo_path:
-            repo_path = _prompt_repo_path()
-            if not repo_path:
-                return
-            self._repo_path = repo_path
+        with console.status("[bold green]Running fix agent on server...[/bold green]"):
+            fix_result = await self._client.request_fix(anomaly.to_dict())
 
-        context_block = build_explain_context(anomaly.to_dict())
+        self._pending_fix = {**fix_result, "anomaly_idx": idx}
+        self._persist_session()
 
-        system_prompt = (
-            "You are an expert SRE and software engineer. "
-            "Given an anomaly summary and access to the service's codebase, "
-            "find the root cause and propose a minimal, safe fix as a unified diff.\n\n"
-            "Use the available tools to:\n"
-            "1. Search for relevant code (search_code, glob_files)\n"
-            "2. Read relevant files (get_file)\n"
-            "3. Check recent commits (get_recent_commits)\n"
-            "4. Propose the fix (suggest_fix) — include a unified diff and explanation\n\n"
-            "Focus on the stack trace file paths and exception types first.\n"
-            "Do NOT apply the fix — just suggest it.\n\n"
-            "--- Anomaly Summary ---\n"
-            f"{context_block}\n"
-            "--- End Summary ---"
-        )
-
-        console.print(f"\n[bold]Finding fix for anomaly #{idx}:[/bold] {anomaly.description}")
-        console.print(f"[dim]Repo: {repo_path}[/dim]\n")
-
-        fix_result = await _run_fix_agent(
-            system_prompt=system_prompt,
-            model=self._model,
-            repo_path=repo_path,
-            service=self._service,
-            anomaly=anomaly,
-        )
-
-        if fix_result:
-            self._pending_fix = {**fix_result, "anomaly_idx": idx}
-            self._persist_session()
-            console.print(
-                Panel(
-                    Markdown(fix_result.get("explanation", "")),
-                    title="[bold]Proposed Fix[/bold]",
-                    border_style="yellow",
-                )
+        console.print(
+            Panel(
+                Markdown(fix_result.get("explanation", "")),
+                title="[bold]Proposed Fix[/bold]",
+                border_style="yellow",
             )
-            if fix_result.get("diff"):
-                console.print(
-                    Syntax(
-                        fix_result["diff"],
-                        "diff",
-                        theme="monokai",
-                        line_numbers=False,
-                    )
-                )
+        )
+        if fix_result.get("diff"):
             console.print(
-                "\n[bold yellow]Run [cyan]approve[/cyan] to apply this fix and open a PR.[/bold yellow]"
+                Syntax(fix_result["diff"], "diff", theme="monokai", line_numbers=False)
             )
-        else:
-            console.print("[dim]No fix proposed.[/dim]")
+        console.print(
+            "\n[bold yellow]Run [cyan]approve[/cyan] to apply this fix and open a PR.[/bold yellow]"
+        )
 
     async def _do_approve(self) -> None:
         if not self._pending_fix:
@@ -381,41 +322,17 @@ class MonitorREPL:
             console.print("[red]Pending fix has no diff.[/red]")
             return
 
-        confirmed = _confirm(
-            f"Apply fix and open a GitHub PR? "
-            f"(requires GITHUB_TOKEN + GITHUB_REPO configured)"
-        )
+        confirmed = _confirm("Apply fix and open a GitHub PR?")
         if not confirmed:
             console.print("[dim]Aborted.[/dim]")
             return
 
-        # Check GitHub config
-        from tinker.config import settings
-        if not settings.github_token or not settings.github_repo:
-            console.print(
-                "[red]GITHUB_TOKEN and GITHUB_REPO are not configured.[/red]\n"
-                "[dim]Set them in your .env or tinker.toml, then run approve again.[/dim]"
-            )
-            return
+        with console.status("[bold green]Applying fix on server...[/bold green]"):
+            result = await self._client.approve_fix(diff, explanation, self._service)
 
-        from tinker.code.fix_applier import FixApplier
-        import uuid
-        branch = f"tinker/fix-{uuid.uuid4().hex[:8]}"
-
-        with console.status("[bold green]Validating and applying fix...[/bold green]"):
-            try:
-                applier = FixApplier(repo_path=self._repo_path or ".")
-                pr_url = await applier.create_pr(
-                    diff=diff,
-                    branch_name=branch,
-                    title=f"fix: tinker auto-fix for {self._service}",
-                    body=explanation,
-                )
-                self._pending_fix = None
-                self._persist_session()
-                console.print(f"\n[bold green]PR opened:[/bold green] {pr_url}")
-            except Exception as exc:
-                console.print(f"[red]Failed to create PR:[/red] {exc}")
+        self._pending_fix = None
+        self._persist_session()
+        console.print(f"\n[bold green]PR opened:[/bold green] {result['pr_url']}")
 
     # ── Session persistence ───────────────────────────────────────────────────
 
@@ -438,124 +355,8 @@ class MonitorREPL:
                 )
 
 
-# ── Fix agent loop ────────────────────────────────────────────────────────────
-
-async def _run_fix_agent(
-    system_prompt: str,
-    model: str,
-    repo_path: str,
-    service: str,
-    anomaly: Anomaly,
-) -> dict | None:
-    """Mini agent loop: LLM + code tools → returns {diff, explanation} or None."""
-    from tinker.agent import llm as llm_mod
-    from tinker.code.repo import RepoClient
-
-    repo = RepoClient(repo_path)
-
-    # Tool definitions for fix agent
-    tools = [
-        _fn("glob_files", "Find files by glob pattern in the repo.",
-            {"type": "object", "properties": {
-                "pattern": {"type": "string", "description": "Glob pattern, e.g. **/*.py"},
-                "max_results": {"type": "integer", "default": 20},
-            }, "required": ["pattern"]}),
-        _fn("get_file", "Read a source file from the repo.",
-            {"type": "object", "properties": {
-                "path": {"type": "string", "description": "File path relative to repo root"},
-            }, "required": ["path"]}),
-        _fn("search_code", "Search the codebase for a pattern (ripgrep).",
-            {"type": "object", "properties": {
-                "pattern": {"type": "string"},
-                "file_glob": {"type": "string", "default": "**/*.py"},
-                "context_lines": {"type": "integer", "default": 5},
-            }, "required": ["pattern"]}),
-        _fn("get_recent_commits", "List recent git commits touching a path.",
-            {"type": "object", "properties": {
-                "path": {"type": "string", "default": "."},
-                "n": {"type": "integer", "default": 10},
-            }}),
-        _fn("suggest_fix", "Propose a unified diff fix. Does NOT apply it.",
-            {"type": "object", "properties": {
-                "diff": {"type": "string", "description": "Unified diff (--- a/ +++ b/)"},
-                "explanation": {"type": "string"},
-            }, "required": ["diff", "explanation"]}),
-    ]
-
-    messages = [{"role": "user", "content": system_prompt}]
-    result: dict | None = None
-    MAX_TURNS = 10
-
-    for turn in range(MAX_TURNS):
-        with console.status(f"[dim]Agent turn {turn + 1}/{MAX_TURNS}...[/dim]"):
-            response = llm_mod.complete(messages, model=model, tools=tools, max_tokens=4096)
-
-        if llm_mod.is_tool_call(response):
-            messages.append(llm_mod.assistant_message_from_response(response))
-            for tc in llm_mod.extract_tool_calls(response):
-                tool_result = _dispatch_fix_tool(tc["name"], tc["arguments"], repo)
-                if tc["name"] == "suggest_fix":
-                    result = tc["arguments"]
-                messages.append(
-                    llm_mod.tool_result_message(tc["id"], tool_result)
-                )
-            if result:
-                break
-        else:
-            # Text response — done
-            break
-
-    return result
-
-
-def _dispatch_fix_tool(name: str, args: dict, repo) -> str:
-    """Execute a fix-agent tool call and return string result."""
-    import glob as glob_mod
-    import os
-
-    match name:
-        case "glob_files":
-            pattern = args.get("pattern", "**/*")
-            max_r = args.get("max_results", 20)
-            matches = glob_mod.glob(
-                os.path.join(str(repo._root), pattern), recursive=True
-            )
-            # Strip repo root prefix for readability
-            root = str(repo._root)
-            rel = [m[len(root) + 1:] for m in matches if not _is_binary(m)]
-            return "\n".join(rel[:max_r]) or "(no matches)"
-
-        case "get_file":
-            return repo.read_file(args["path"])
-
-        case "search_code":
-            return repo.search(
-                args["pattern"],
-                glob=args.get("file_glob", "**/*.py"),
-                context_lines=args.get("context_lines", 5),
-            )
-
-        case "get_recent_commits":
-            commits = repo.recent_commits(
-                service_path=args.get("path", "."),
-                n=args.get("n", 10),
-            )
-            return "\n".join(
-                f"{c['sha'][:8]} {c['date'][:10]} {c['author']} — {c['subject']}"
-                for c in commits
-            ) or "(no commits)"
-
-        case "suggest_fix":
-            return "Fix staged. Awaiting approval."
-
-        case _:
-            return f"Unknown tool: {name}"
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _fn(name: str, desc: str, params: dict) -> dict:
-    return {"type": "function", "function": {"name": name, "description": desc, "parameters": params}}
 
 
 def _parse_index(cmd: str, verb: str) -> int | None:
@@ -570,44 +371,6 @@ def _parse_index(cmd: str, verb: str) -> int | None:
         return None
 
 
-def _default_model() -> str:
-    from tinker.config import settings
-    return settings.default_model
-
-
-def _find_repo() -> str | None:
-    """Return TINKER_REPO_PATH config, then try current directory."""
-    from tinker.config import settings
-    if settings.tinker_repo_path:
-        return settings.tinker_repo_path
-    import subprocess
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        capture_output=True, text=True,
-    )
-    if result.returncode == 0:
-        return result.stdout.strip()
-    return None
-
-
-def _prompt_repo_path() -> str | None:
-    """Ask the user for a repo path interactively."""
-    console.print(
-        "[yellow]No code repository configured.[/yellow]\n"
-        "[dim]Set [bold]TINKER_REPO_PATH[/bold] in your .env to skip this prompt.[/dim]"
-    )
-    try:
-        path = input("Repository path (or Enter to skip): ").strip()
-    except (EOFError, KeyboardInterrupt):
-        return None
-    if not path:
-        return None
-    import os
-    if not os.path.isdir(path):
-        console.print(f"[red]Directory not found: {path}[/red]")
-        return None
-    return path
-
 
 def _confirm(message: str) -> bool:
     try:
@@ -617,26 +380,3 @@ def _confirm(message: str) -> bool:
         return False
 
 
-def _is_binary(path: str) -> bool:
-    """Quick check — skip binary files for glob_files results."""
-    import os
-    BINARY_EXTS = {
-        ".pyc", ".so", ".o", ".a", ".dylib", ".dll", ".exe",
-        ".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip", ".tar", ".gz",
-    }
-    _, ext = os.path.splitext(path)
-    return ext.lower() in BINARY_EXTS
-
-
-async def _llm_complete(prompt: str, model: str) -> str:
-    """Single non-streaming LLM call. Returns text response."""
-    import asyncio
-    from tinker.agent import llm as llm_mod
-
-    messages = [{"role": "user", "content": prompt}]
-    loop = asyncio.get_event_loop()
-    response = await loop.run_in_executor(
-        None,
-        lambda: llm_mod.complete(messages, model=model, max_tokens=2048),
-    )
-    return llm_mod.extract_text(response)

@@ -14,13 +14,14 @@ import httpx
 import structlog
 
 from tinker.backends.base import Anomaly, LogEntry, MetricPoint
-from tinker.agent.orchestrator import IncidentReport
 from tinker.client.config import ServerConfig
 
 log = structlog.get_logger(__name__)
 
 # How long to wait for a server response on query operations
 _QUERY_TIMEOUT = 30.0
+_EXPLAIN_TIMEOUT = 120.0
+_FIX_TIMEOUT = 300.0
 _ANALYZE_TIMEOUT = 300.0  # analysis can take a while
 
 
@@ -180,84 +181,46 @@ class RemoteClient:
             ))
         return results
 
-    # ── Agent ─────────────────────────────────────────────────────────────────
+    # ── Agent (explain / fix / approve) ──────────────────────────────────────
 
-    async def analyze(
+    async def stream_explain(
         self,
-        service: str,
-        since: str,
-        deep: bool = False,
-    ) -> IncidentReport:
-        """Collect the full report (non-streaming)."""
-        report_data: dict | None = None
-        async for chunk in self.stream_analyze(service, since, deep):
-            # Drain the stream — report arrives as the last "report" event
-            if isinstance(chunk, dict):
-                report_data = chunk
-
-        if report_data is None:
-            raise RuntimeError("Server did not return an incident report")
-
-        from datetime import timezone
-        ts_raw = report_data.get("created_at", "")
-        try:
-            ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
-        except (ValueError, AttributeError):
-            ts = datetime.now(timezone.utc)
-
-        return IncidentReport(
-            incident_id=report_data["incident_id"],
-            service=report_data["service"],
-            severity=report_data["severity"],
-            root_cause=report_data["root_cause"],
-            summary=report_data.get("summary", ""),
-            affected_services=report_data.get("affected_services", []),
-            suggested_fix=report_data.get("suggested_fix"),
-            model_used=report_data.get("model_used", ""),
-            created_at=ts,
-        )
-
-    async def stream_analyze(
-        self,
-        service: str,
-        since: str,
-        deep: bool = False,
+        anomaly: dict[str, Any],
     ) -> AsyncGenerator[str, None]:
-        """Stream text chunks from the server SSE endpoint.
-
-        Yields str for text chunks and dict for the final report event.
-        """
+        """Stream LLM explanation tokens for an anomaly."""
         async with httpx.AsyncClient(
             base_url=self._base,
             headers=self._headers(),
-            timeout=_ANALYZE_TIMEOUT,
+            timeout=_EXPLAIN_TIMEOUT,
         ) as c:
-            async with c.stream(
-                "POST",
-                "/api/v1/analyze",
-                json={"service": service, "since": since, "deep": deep},
-            ) as resp:
+            async with c.stream("POST", "/api/v1/explain", json={"anomaly": anomaly}) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if not line.startswith("data:"):
                         continue
                     raw = line[5:].strip()
-                    if not raw:
-                        continue
+                    if not raw or raw == "[DONE]":
+                        break
                     try:
-                        data = json.loads(raw)
+                        yield json.loads(raw).get("text", "")
                     except json.JSONDecodeError:
-                        continue
+                        pass
 
-                    event_type = data.get("_event")  # injected by client below
-                    if "text" in data:
-                        yield data["text"]
-                    elif "incident_id" in data:
-                        yield data  # type: ignore[misc]  — final report dict
+    async def request_fix(self, anomaly: dict[str, Any]) -> dict[str, Any]:
+        """Ask the server to run the fix agent. Returns {diff, explanation}."""
+        async with self._client(timeout=_FIX_TIMEOUT) as c:
+            resp = await c.post("/api/v1/fix", json={"anomaly": anomaly})
+            resp.raise_for_status()
+        return resp.json()
 
-    async def get_fix(self, incident_id: str) -> dict[str, Any]:
-        async with self._client() as c:
-            resp = await c.post("/api/v1/fix", json={"incident_id": incident_id})
+    async def approve_fix(self, diff: str, explanation: str, service: str) -> dict[str, Any]:
+        """Apply a staged diff on the server and open a PR."""
+        async with self._client(timeout=_FIX_TIMEOUT) as c:
+            resp = await c.post("/api/v1/approve", json={
+                "diff": diff,
+                "explanation": explanation,
+                "service": service,
+            })
             resp.raise_for_status()
         return resp.json()
 

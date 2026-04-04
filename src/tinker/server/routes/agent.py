@@ -1,183 +1,264 @@
-"""Agent REST + SSE routes.
+"""Agent routes — LLM-powered explain, fix, and approve.
 
-POST /api/v1/analyze   — stream RCA analysis as server-sent events
-POST /api/v1/fix       — get fix suggestion for a prior incident
-POST /api/v1/approve   — apply fix + open PR
-GET  /api/v1/sessions/{id} — fetch session state
+POST /api/v1/explain   — stream LLM explanation for an anomaly (SSE)
+POST /api/v1/fix       — run fix agent loop, return diff + explanation
+POST /api/v1/approve   — apply a staged diff and open a GitHub PR
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
-from typing import Annotated, AsyncIterator
+from typing import Annotated, Any, AsyncIterator
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from tinker.agent.guardrails import GuardRailChain
-from tinker.agent.orchestrator import AgentSession, Orchestrator
-from tinker.backends import get_backend
 from tinker.server.auth import AuthContext, require_auth
-from tinker.server.session_store import SessionStore
 
 log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["agent"])
 
-# In-memory session store — swap for Redis in production
-_store = SessionStore()
 
+# ── Request models ────────────────────────────────────────────────────────────
 
-# ── Request / response models ─────────────────────────────────────────────────
-
-
-class AnalyzeRequest(BaseModel):
-    service: str
-    since: str = "1h"
-    deep: bool = False  # use claude-opus with thinking
+class ExplainRequest(BaseModel):
+    anomaly: dict[str, Any]
 
 
 class FixRequest(BaseModel):
-    incident_id: str
+    anomaly: dict[str, Any]
 
 
 class ApproveRequest(BaseModel):
-    incident_id: str
+    diff: str
+    explanation: str
+    service: str
 
 
-# ── SSE helpers ───────────────────────────────────────────────────────────────
+# ── SSE helper ────────────────────────────────────────────────────────────────
 
-
-def _sse(event: str, data: str | dict) -> str:
-    payload = data if isinstance(data, str) else json.dumps(data)
-    return f"event: {event}\ndata: {payload}\n\n"
-
-
-async def _stream_analysis(
-    service: str,
-    since: str,
-    session: AgentSession,
-    orch: Orchestrator,
-) -> AsyncIterator[str]:
-    yield _sse("start", {"session_id": session.session_id, "service": service})
-    try:
-        async for chunk in orch.stream_analyze(service, since, session):
-            yield _sse("chunk", {"text": chunk})
-
-        report = session.incident_report
-        if report:
-            yield _sse("report", report.to_dict())
-    except Exception as exc:
-        log.exception("agent.stream_error", service=service)
-        yield _sse("error", {"message": str(exc)})
-    finally:
-        yield _sse("done", {})
+def _sse(data: str) -> str:
+    return f"data: {json.dumps({'text': data})}\n\n"
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-
-@router.post("/analyze")
-async def analyze(
-    req: AnalyzeRequest,
+@router.post("/explain")
+async def explain(
+    req: ExplainRequest,
     auth: Annotated[AuthContext, Depends(require_auth)],
 ) -> StreamingResponse:
-    """Stream RCA analysis as server-sent events.
+    """Stream an LLM explanation for an anomaly."""
+    from tinker.agent import llm as llm_mod
+    from tinker.monitor.summarizer import build_explain_context
+    from tinker.config import settings
 
-    The client reads the stream and processes events:
-      event: start   — session started
-      event: chunk   — text token from agent
-      event: report  — final IncidentReport JSON
-      event: error   — error occurred
-      event: done    — stream complete
-    """
-    backend = get_backend()
-    guardrails = GuardRailChain()
-    orch = Orchestrator(use_deep_rca=req.deep)
-    session = AgentSession(service=req.service)
-    session.context["actor"] = auth.subject
-    session.context["actor_roles"] = auth.roles
+    context_block = build_explain_context(req.anomaly)
+    prompt = (
+        "You are an expert SRE analysing a production anomaly. "
+        "Based on the structured summary below, explain:\n"
+        "1. What is happening (root cause hypothesis)\n"
+        "2. Why it is happening (likely trigger)\n"
+        "3. Immediate impact\n"
+        "4. What to look at next\n\n"
+        "Be concise. Focus on actionable insight, not restatement of the data.\n\n"
+        "--- Anomaly Summary ---\n"
+        f"{context_block}\n"
+        "--- End Summary ---"
+    )
 
-    _store.put(session)
-    log.info("analyze.start", service=req.service, actor=auth.subject)
+    log.info("explain.start", actor=auth.subject, metric=req.anomaly.get("metric"))
+
+    async def _stream() -> AsyncIterator[str]:
+        try:
+            async for chunk in llm_mod.stream_complete(
+                [{"role": "user", "content": prompt}],
+                model=settings.default_model,
+            ):
+                yield _sse(chunk)
+        except Exception:
+            log.exception("explain.error")
+            yield _sse("[Error generating explanation — check server logs]")
+        finally:
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(
-        _stream_analysis(req.service, req.since, session, orch),
+        _stream(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # disable nginx buffering
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
 @router.post("/fix")
-async def get_fix(
+async def fix(
     req: FixRequest,
     auth: Annotated[AuthContext, Depends(require_auth)],
-) -> dict:
-    """Retrieve the pending fix for an incident."""
-    session = _store.get_by_incident(req.incident_id)
-    if not session:
-        raise HTTPException(status_code=404, detail=f"Incident {req.incident_id} not found")
-
-    report = session.incident_report
-    if not report:
-        raise HTTPException(status_code=404, detail="No incident report for this session")
-
-    return {
-        "incident_id": req.incident_id,
-        "suggested_fix": report.suggested_fix,
-        "fix_diff": report.fix_diff,
-        "status": "pending_approval",
-        "approve_hint": f"POST /api/v1/approve with incident_id={req.incident_id}",
-    }
-
-
-@router.post("/approve")
-async def approve_fix(
-    req: ApproveRequest,
-    auth: Annotated[AuthContext, Depends(require_auth)],
-) -> dict:
-    """Apply a staged fix and open a PR. Requires oncall role."""
-    if "oncall" not in auth.roles and "sre-lead" not in auth.roles:
-        raise HTTPException(status_code=403, detail="Approving fixes requires oncall or sre-lead role")
-
-    session = _store.get_by_incident(req.incident_id)
-    if not session:
-        raise HTTPException(status_code=404, detail=f"Incident {req.incident_id} not found")
-
-    from tinker.agent.guardrails import GuardRailChain
-    from tinker.agent.tools import ToolDispatcher
+) -> dict[str, Any]:
+    """Run the fix agent loop against the server-side repo. Returns {diff, explanation}."""
     from tinker.config import settings
+    from tinker.monitor.summarizer import build_explain_context
+    from tinker.agent import llm as llm_mod
+    from tinker.code.repo import RepoClient
 
-    guardrails = GuardRailChain()
-    guardrails.grant_approval(session.context, "apply_fix", auth.subject)
+    repo_path = settings.tinker_repo_path
+    if not repo_path:
+        raise HTTPException(
+            status_code=422,
+            detail="TINKER_REPO_PATH is not configured on the server.",
+        )
 
-    dispatcher = ToolDispatcher(guardrails=guardrails, repo_path=settings.tinker_repo_path)
-    result = await dispatcher.dispatch(
-        "apply_fix",
-        {"incident_id": req.incident_id},
-        session.context,
+    service = req.anomaly.get("service", "unknown")
+    context_block = build_explain_context(req.anomaly)
+
+    system_prompt = (
+        "You are an expert SRE and software engineer. "
+        "Given an anomaly summary and access to the service's codebase, "
+        "find the root cause and propose a minimal, safe fix as a unified diff.\n\n"
+        "Use the available tools to:\n"
+        "1. Search for relevant code (search_code, glob_files)\n"
+        "2. Read relevant files (get_file)\n"
+        "3. Check recent commits (get_recent_commits)\n"
+        "4. Propose the fix (suggest_fix) — include a unified diff and explanation\n\n"
+        "Focus on the stack trace file paths and exception types first.\n"
+        "Do NOT apply the fix — just suggest it.\n\n"
+        "--- Anomaly Summary ---\n"
+        f"{context_block}\n"
+        "--- End Summary ---"
     )
 
-    log.info("fix.approved", incident_id=req.incident_id, approved_by=auth.subject)
+    log.info("fix.start", actor=auth.subject, service=service)
+
+    tools = [
+        _fn("glob_files", "Find files by glob pattern in the repo.",
+            {"type": "object", "properties": {
+                "pattern": {"type": "string"},
+                "max_results": {"type": "integer", "default": 20},
+            }, "required": ["pattern"]}),
+        _fn("get_file", "Read a source file from the repo.",
+            {"type": "object", "properties": {
+                "path": {"type": "string"},
+            }, "required": ["path"]}),
+        _fn("search_code", "Search the codebase for a pattern.",
+            {"type": "object", "properties": {
+                "pattern": {"type": "string"},
+                "file_glob": {"type": "string", "default": "**/*.py"},
+                "context_lines": {"type": "integer", "default": 5},
+            }, "required": ["pattern"]}),
+        _fn("get_recent_commits", "List recent git commits touching a path.",
+            {"type": "object", "properties": {
+                "path": {"type": "string", "default": "."},
+                "n": {"type": "integer", "default": 10},
+            }}),
+        _fn("suggest_fix", "Propose a unified diff fix. Does NOT apply it.",
+            {"type": "object", "properties": {
+                "diff": {"type": "string"},
+                "explanation": {"type": "string"},
+            }, "required": ["diff", "explanation"]}),
+    ]
+
+    repo = RepoClient(repo_path)
+    messages: list[dict] = [{"role": "user", "content": system_prompt}]
+    result: dict | None = None
+    MAX_TURNS = 10
+
+    for turn in range(MAX_TURNS):
+        response = llm_mod.complete(messages, model=settings.default_model, tools=tools, max_tokens=4096)
+        if llm_mod.is_tool_call(response):
+            messages.append(llm_mod.assistant_message_from_response(response))
+            for tc in llm_mod.extract_tool_calls(response):
+                tool_result = _dispatch_tool(tc["name"], tc["arguments"], repo)
+                if tc["name"] == "suggest_fix":
+                    result = tc["arguments"]
+                messages.append(llm_mod.tool_result_message(tc["id"], tool_result))
+            if result:
+                break
+        else:
+            break
+
+    if not result:
+        raise HTTPException(status_code=422, detail="Agent did not produce a fix.")
+
+    log.info("fix.done", actor=auth.subject, service=service, has_diff=bool(result.get("diff")))
     return result
 
 
-@router.get("/sessions/{session_id}")
-async def get_session(
-    session_id: str,
+@router.post("/approve")
+async def approve(
+    req: ApproveRequest,
     auth: Annotated[AuthContext, Depends(require_auth)],
-) -> dict:
-    session = _store.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    report = session.incident_report
-    return {
-        "session_id": session_id,
-        "service": session.service,
-        "incident": report.to_dict() if report else None,
-    }
+) -> dict[str, Any]:
+    """Apply a staged diff and open a GitHub PR. Requires oncall or sre-lead role."""
+    if "oncall" not in auth.roles and "sre-lead" not in auth.roles:
+        raise HTTPException(status_code=403, detail="Requires oncall or sre-lead role")
+
+    from tinker.config import settings
+    from tinker.code.fix_applier import FixApplier
+    import uuid
+
+    repo_path = settings.tinker_repo_path
+    if not repo_path:
+        raise HTTPException(status_code=422, detail="TINKER_REPO_PATH is not configured on the server.")
+
+    branch = f"tinker/fix-{uuid.uuid4().hex[:8]}"
+    applier = FixApplier(repo_path=repo_path)
+
+    try:
+        pr_url = await applier.create_pr(
+            diff=req.diff,
+            branch_name=branch,
+            title=f"fix: tinker auto-fix for {req.service}",
+            body=req.explanation,
+        )
+    except Exception as exc:
+        log.exception("approve.failed", service=req.service)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    log.info("approve.done", pr_url=pr_url, approved_by=auth.subject)
+    return {"pr_url": pr_url}
+
+
+# ── Tool helpers ──────────────────────────────────────────────────────────────
+
+def _fn(name: str, desc: str, params: dict) -> dict:
+    return {"type": "function", "function": {"name": name, "description": desc, "parameters": params}}
+
+
+def _dispatch_tool(name: str, args: dict, repo) -> str:
+    import glob as glob_mod
+    import os
+
+    match name:
+        case "glob_files":
+            pattern = args.get("pattern", "**/*")
+            max_r = args.get("max_results", 20)
+            matches = glob_mod.glob(os.path.join(str(repo._root), pattern), recursive=True)
+            root = str(repo._root)
+            rel = [m[len(root) + 1:] for m in matches if not _is_binary(m)]
+            return "\n".join(rel[:max_r]) or "(no matches)"
+        case "get_file":
+            return repo.read_file(args["path"])
+        case "search_code":
+            return repo.search(
+                args["pattern"],
+                glob=args.get("file_glob", "**/*.py"),
+                context_lines=args.get("context_lines", 5),
+            )
+        case "get_recent_commits":
+            commits = repo.recent_commits(service_path=args.get("path", "."), n=args.get("n", 10))
+            return "\n".join(
+                f"{c['sha'][:8]} {c['date'][:10]} {c['author']} — {c['subject']}"
+                for c in commits
+            ) or "(no commits)"
+        case "suggest_fix":
+            return "Fix staged. Awaiting approval."
+        case _:
+            return f"Unknown tool: {name}"
+
+
+def _is_binary(path: str) -> bool:
+    import os
+    _BINARY_EXTS = {".pyc", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico",
+                   ".pdf", ".zip", ".gz", ".tar", ".whl", ".so", ".dylib"}
+    return os.path.splitext(path)[1].lower() in _BINARY_EXTS
