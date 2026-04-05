@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import structlog
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from tinker.backends import get_backend
@@ -52,7 +52,11 @@ async def query_logs(
     auth: Annotated[AuthContext, Depends(require_auth)],
 ) -> dict[str, Any]:
     backend = get_backend()
-    entries = await backend.query_logs(req.service, req.query, req.start, req.end, req.limit, req.resource_type)
+    try:
+        entries = await backend.query_logs(req.service, req.query, req.start, req.end, req.limit, req.resource_type)
+    except Exception as exc:
+        log.error("query.logs.error", service=req.service, error=str(exc))
+        raise HTTPException(status_code=502, detail=f"Backend error: {exc}")
     log.debug("query.logs", service=req.service, count=len(entries), actor=auth.subject)
     return {
         "entries": [
@@ -76,7 +80,11 @@ async def get_metrics(
     auth: Annotated[AuthContext, Depends(require_auth)],
 ) -> dict[str, Any]:
     backend = get_backend()
-    points = await backend.get_metrics(req.service, req.metric, req.start, req.end)
+    try:
+        points = await backend.get_metrics(req.service, req.metric, req.start, req.end)
+    except Exception as exc:
+        log.error("query.metrics.error", service=req.service, metric=req.metric, error=str(exc))
+        raise HTTPException(status_code=502, detail=f"Backend error: {exc}")
     log.debug("query.metrics", service=req.service, metric=req.metric, count=len(points))
     return {
         "points": [
@@ -97,7 +105,11 @@ async def detect_anomalies(
     auth: Annotated[AuthContext, Depends(require_auth)],
 ) -> dict[str, Any]:
     backend = get_backend()
-    anomalies = await backend.detect_anomalies(req.service, req.window_minutes)
+    try:
+        anomalies = await backend.detect_anomalies(req.service, req.window_minutes)
+    except Exception as exc:
+        log.error("query.anomalies.error", service=req.service, error=str(exc))
+        raise HTTPException(status_code=502, detail=f"Backend error: {exc}")
     log.debug("query.anomalies", service=req.service, count=len(anomalies))
     return {
         "anomalies": [a.to_dict() for a in anomalies]

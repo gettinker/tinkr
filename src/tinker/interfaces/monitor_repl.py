@@ -156,7 +156,15 @@ class MonitorREPL:
                     self._service, window_minutes=self._window
                 )
             except Exception as exc:
-                console.print(f"[red]Backend error:[/red] {exc}")
+                import httpx
+                if isinstance(exc, httpx.HTTPStatusError):
+                    try:
+                        detail = exc.response.json().get("detail", str(exc))
+                    except Exception:
+                        detail = str(exc)
+                else:
+                    detail = str(exc)
+                console.print(f"[red]Backend error:[/red] {detail}")
                 self._anomalies = []
 
         self._apply_filter()

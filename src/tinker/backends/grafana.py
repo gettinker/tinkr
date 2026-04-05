@@ -319,6 +319,7 @@ class GrafanaBackend(ObservabilityBackend):
         end = datetime.now(timezone.utc)
         start = end - timedelta(minutes=window_minutes)
         anomalies: list[Anomaly] = []
+        backend_errors: list[str] = []
 
         # 1. Error log count via Loki
         try:
@@ -343,8 +344,9 @@ class GrafanaBackend(ObservabilityBackend):
                         log_summary=summary,
                     )
                 )
-        except Exception:
+        except Exception as exc:
             log.exception("grafana.anomaly.loki_check_failed", service=service)
+            backend_errors.append(f"Loki: {exc}")
 
         # 2. HTTP 5xx rate via Prometheus
         try:
@@ -368,7 +370,16 @@ class GrafanaBackend(ObservabilityBackend):
                             threshold=20.0,
                         )
                     )
-        except Exception:
+        except Exception as exc:
             log.exception("grafana.anomaly.prom_check_failed", service=service)
+            backend_errors.append(f"Prometheus: {exc}")
+
+        # Surface errors to the caller if no anomalies were found — otherwise the
+        # user sees an empty table with no indication that the backend is unhealthy.
+        if backend_errors and not anomalies:
+            raise RuntimeError(
+                "Observability backend check(s) failed — "
+                + "; ".join(backend_errors)
+            )
 
         return anomalies
