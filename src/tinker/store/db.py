@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS watches (
     service           TEXT NOT NULL,
     started_at        TEXT NOT NULL,
     slack_channel     TEXT,
+    notifier          TEXT,
+    destination       TEXT,
     last_run_at       TEXT,
     last_anomaly_hash TEXT,
     interval_seconds  INTEGER NOT NULL DEFAULT 60,
@@ -64,6 +66,20 @@ class TinkerDB:
         self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        self._conn.commit()
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Apply additive schema migrations for existing databases."""
+        migrations = [
+            "ALTER TABLE watches ADD COLUMN notifier TEXT",
+            "ALTER TABLE watches ADD COLUMN destination TEXT",
+        ]
+        for sql in migrations:
+            try:
+                self._conn.execute(sql)
+            except sqlite3.OperationalError:
+                pass  # column already exists
         self._conn.commit()
 
     def close(self) -> None:
@@ -119,14 +135,15 @@ class TinkerDB:
         self,
         watch_id: str,
         service: str,
-        slack_channel: str | None = None,
+        notifier: str | None = None,
+        destination: str | None = None,
         interval_seconds: int = 60,
     ) -> str:
         self._conn.execute(
             "INSERT INTO watches"
-            " (watch_id, service, started_at, slack_channel, interval_seconds)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (watch_id, service, _now(), slack_channel, interval_seconds),
+            " (watch_id, service, started_at, notifier, destination, interval_seconds)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (watch_id, service, _now(), notifier, destination, interval_seconds),
         )
         self._conn.commit()
         return watch_id

@@ -83,6 +83,16 @@ class ServiceConfig:
 
 
 @dataclass
+class NotifierConfig:
+    """Config for one named notifier (e.g. [notifiers.default])."""
+    type: str                            # slack | discord | webhook
+    options: dict[str, str] = field(default_factory=dict)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.options.get(key, default)
+
+
+@dataclass
 class SlackSection:
     bot_token: str | None = None
     alerts_channel: str = "#incidents"
@@ -103,6 +113,7 @@ class TomlConfig:
     auth: AuthSection = field(default_factory=AuthSection)
     backends: dict[str, BackendConfig] = field(default_factory=dict)
     services: dict[str, ServiceConfig] = field(default_factory=dict)
+    notifiers: dict[str, NotifierConfig] = field(default_factory=dict)
     slack: SlackSection = field(default_factory=SlackSection)
     github: GitHubSection = field(default_factory=GitHubSection)
 
@@ -214,6 +225,14 @@ def load(path: Path = _CONFIG_PATH) -> TomlConfig:
     if cfg.backends:
         cfg._default_backend = next(iter(cfg.backends))
 
+    # [notifiers.*]
+    for name, n in raw.get("notifiers", {}).items():
+        ntype = n.pop("type", "")
+        cfg.notifiers[name] = NotifierConfig(
+            type=ntype,
+            options=_resolve_dict(n),
+        )
+
     # [services.*]
     for name, s in raw.get("services", {}).items():
         cfg.services[name] = ServiceConfig(
@@ -245,6 +264,7 @@ def load(path: Path = _CONFIG_PATH) -> TomlConfig:
         path=str(path),
         backends=list(cfg.backends),
         services=list(cfg.services),
+        notifiers=list(cfg.notifiers),
     )
     return cfg
 

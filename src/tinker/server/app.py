@@ -16,10 +16,20 @@ log = structlog.get_logger(__name__)
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    from tinker.server.notifiers import NotifierRegistry
     from tinker.server.watch_manager import WatchManager
     from tinker.server.routes.watches import set_manager
+    from tinker import toml_config as tc
 
-    manager = WatchManager()
+    registry = NotifierRegistry()
+    cfg = tc.get()
+    if cfg.notifiers:
+        registry.build_from_toml(cfg.notifiers)
+        log.info("notifiers.loaded", count=len(registry))
+    else:
+        log.info("notifiers.none_configured — watches will fall back to legacy Slack settings")
+
+    manager = WatchManager(registry=registry)
     set_manager(manager)
     await manager.start()
     yield

@@ -3,6 +3,23 @@
 POST   /api/v1/watches            — create a watch
 GET    /api/v1/watches            — list all watches
 DELETE /api/v1/watches/{watch_id} — stop a watch
+
+Creating a watch
+----------------
+Specify which notifier to use (must be defined in [notifiers.*] in config.toml):
+
+    POST /api/v1/watches
+    {
+      "service": "payments-api",
+      "notifier": "default",          // optional; "default" used if omitted
+      "destination": "#payments-ops", // optional; notifier's own default used if omitted
+      "interval_seconds": 60
+    }
+
+``destination`` meaning depends on the notifier type:
+  - slack   → Slack channel name or ID (e.g. "#incidents")
+  - discord → ignored (webhook URL is fixed at notifier config)
+  - webhook → overrides the configured URL
 """
 
 from __future__ import annotations
@@ -36,7 +53,8 @@ def _get_manager() -> WatchManager:
 
 class CreateWatchRequest(BaseModel):
     service: str
-    slack_channel: str | None = None
+    notifier: str | None = None       # name from [notifiers.*] in config.toml
+    destination: str | None = None    # platform-specific target override
     interval_seconds: int = 60
 
 
@@ -48,10 +66,11 @@ async def create_watch(
     m = _get_manager()
     watch = m.create(
         service=req.service,
-        slack_channel=req.slack_channel,
+        notifier=req.notifier,
+        destination=req.destination,
         interval_seconds=req.interval_seconds,
     )
-    log.info("watch.created_via_api", service=req.service, actor=auth.subject)
+    log.info("watch.created_via_api", service=req.service, notifier=req.notifier, actor=auth.subject)
     return watch
 
 
