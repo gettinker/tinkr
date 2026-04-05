@@ -15,11 +15,12 @@ log = structlog.get_logger(__name__)
 class GCPBackend(ObservabilityBackend):
     """Observability backend backed by GCP Cloud Logging and Cloud Monitoring."""
 
-    def __init__(self) -> None:
+    def __init__(self, config: dict | None = None) -> None:
         from google.cloud import logging as gcp_logging
         from google.cloud import monitoring_v3
 
-        self._project = settings.gcp_project_id or ""
+        cfg = config or {}
+        self._project = cfg.get("project_id") or settings.gcp_project_id or ""
         self._logging_client = gcp_logging.Client(project=self._project)
         self._monitoring_client = monitoring_v3.MetricServiceClient()
 

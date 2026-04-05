@@ -21,10 +21,11 @@ _DEFAULT_ERROR_RATE_THRESHOLD = 5.0
 class CloudWatchBackend(ObservabilityBackend):
     """Observability backend backed by AWS CloudWatch Logs + Metrics."""
 
-    def __init__(self) -> None:
+    def __init__(self, config: dict | None = None) -> None:
+        cfg = config or {}
         session = boto3.Session(
-            profile_name=settings.aws_profile,
-            region_name=settings.aws_region,
+            profile_name=cfg.get("profile") or settings.aws_profile,
+            region_name=cfg.get("region") or settings.aws_region,
         )
         self._logs = session.client("logs")
         self._cw = session.client("cloudwatch")

@@ -47,15 +47,16 @@ log = structlog.get_logger(__name__)
 class AzureBackend(ObservabilityBackend):
     """Observability backend for Azure Monitor Logs + Metrics."""
 
-    def __init__(self) -> None:
+    def __init__(self, config: dict | None = None) -> None:
         from azure.identity import DefaultAzureCredential
         from azure.monitor.query import LogsQueryClient, MetricsQueryClient
 
         from tinker.config import settings
 
-        self._workspace_id: str = getattr(settings, "azure_workspace_id", "") or ""
-        self._subscription_id: str = getattr(settings, "azure_subscription_id", "") or ""
-        self._resource_group: str = getattr(settings, "azure_resource_group", "") or ""
+        cfg = config or {}
+        self._workspace_id: str = cfg.get("workspace_id") or getattr(settings, "azure_workspace_id", "") or ""
+        self._subscription_id: str = cfg.get("subscription_id") or getattr(settings, "azure_subscription_id", "") or ""
+        self._resource_group: str = cfg.get("resource_group") or getattr(settings, "azure_resource_group", "") or ""
 
         credential = DefaultAzureCredential()
         self._logs_client = LogsQueryClient(credential)

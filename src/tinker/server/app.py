@@ -87,10 +87,17 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["ops"])
     async def health():
         from tinker.config import settings
+        from tinker import toml_config as tc
+        cfg = tc.get()
+        if cfg.backends:
+            backends_info = {name: b.type for name, b in cfg.backends.items()}
+        else:
+            backends_info = {"default": settings.tinker_backend}
         return {
             "status": "ok",
             "version": __version__,
-            "backend": settings.tinker_backend,
+            "backend": settings.tinker_backend,   # kept for CLI compat
+            "backends": backends_info,
         }
 
     return app
@@ -99,11 +106,17 @@ def create_app() -> FastAPI:
 def main() -> None:
     import uvicorn
     from tinker.config import settings
+    from tinker import toml_config as tc
+
+    toml = tc.get()
+    host = toml.server.host if toml.backends else settings.tinker_server_host
+    port = toml.server.port if toml.backends else settings.tinker_server_port
+    log_level = toml.server.log_level if toml.backends else settings.log_level.lower()
 
     uvicorn.run(
         "tinker.server.app:create_app",
         factory=True,
-        host=settings.tinker_server_host,
-        port=settings.tinker_server_port,
-        log_level=settings.log_level.lower(),
+        host=host,
+        port=port,
+        log_level=log_level,
     )

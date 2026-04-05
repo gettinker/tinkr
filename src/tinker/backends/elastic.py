@@ -16,15 +16,17 @@ log = structlog.get_logger(__name__)
 class ElasticBackend(ObservabilityBackend):
     """Observability backend backed by Elasticsearch or OpenSearch."""
 
-    def __init__(self) -> None:
+    def __init__(self, config: dict | None = None) -> None:
         from elasticsearch import AsyncElasticsearch
 
-        api_key = settings.elasticsearch_api_key
-        self._client = AsyncElasticsearch(
-            hosts=[settings.elasticsearch_url or "http://localhost:9200"],
-            api_key=api_key.get_secret_value() if api_key else None,
-        )
-        self._index_pattern = "logs-*"
+        cfg = config or {}
+        url = cfg.get("url") or settings.elasticsearch_url or "http://localhost:9200"
+        raw_key = cfg.get("api_key")
+        if not raw_key:
+            sk = settings.elasticsearch_api_key
+            raw_key = sk.get_secret_value() if sk else None
+        self._client = AsyncElasticsearch(hosts=[url], api_key=raw_key)
+        self._index_pattern = cfg.get("index_pattern") or "logs-*"
 
     async def query_logs(
         self,

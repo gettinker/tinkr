@@ -47,23 +47,18 @@ class OTelBackend(ObservabilityBackend):
         OTEL_LOG_INDEX_PATTERN  default: otel-logs-*
     """
 
-    def __init__(
-        self,
-        opensearch_url: str | None = None,
-        opensearch_api_key: str | None = None,
-        prometheus_url: str | None = None,
-        log_index: str = "otel-logs-*",
-    ) -> None:
+    def __init__(self, config: dict | None = None) -> None:
         from tinker.config import settings
 
-        self._os_url = (opensearch_url or getattr(settings, "opensearch_url", None) or "").rstrip("/")
-        self._os_key = opensearch_api_key or (
-            settings.elasticsearch_api_key.get_secret_value()
-            if settings.elasticsearch_api_key
-            else None
-        )
-        self._prom_url = (prometheus_url or getattr(settings, "prometheus_url", None) or "").rstrip("/")
-        self._log_index = log_index
+        cfg = config or {}
+        self._os_url = (cfg.get("opensearch_url") or getattr(settings, "opensearch_url", None) or "").rstrip("/")
+        raw_key = cfg.get("opensearch_api_key") or cfg.get("api_key")
+        if not raw_key:
+            sk = settings.elasticsearch_api_key
+            raw_key = sk.get_secret_value() if sk else None
+        self._os_key = raw_key
+        self._prom_url = (cfg.get("prometheus_url") or getattr(settings, "prometheus_url", None) or "").rstrip("/")
+        self._log_index = cfg.get("log_index") or getattr(settings, "otel_log_index_pattern", "otel-logs-*")
 
         self._os_headers: dict[str, str] = {"Content-Type": "application/json"}
         if self._os_key:

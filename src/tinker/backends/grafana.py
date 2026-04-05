@@ -53,18 +53,23 @@ def _ns_to_dt(ns: int | str) -> datetime:
 class GrafanaBackend(ObservabilityBackend):
     """Observability backend for the Grafana stack (Loki + Prometheus + Tempo)."""
 
-    def __init__(self) -> None:
+    def __init__(self, config: dict | None = None) -> None:
         from tinker.config import settings
 
-        self._loki_url = getattr(settings, "grafana_loki_url", "") or ""
-        self._prom_url = getattr(settings, "grafana_prometheus_url", "") or ""
-        self._tempo_url = getattr(settings, "grafana_tempo_url", "") or ""
-        self._service_label: str = getattr(settings, "grafana_service_label", "service") or "service"
+        cfg = config or {}
+        self._loki_url = cfg.get("loki_url") or getattr(settings, "grafana_loki_url", "") or ""
+        self._prom_url = cfg.get("prometheus_url") or getattr(settings, "grafana_prometheus_url", "") or ""
+        self._tempo_url = cfg.get("tempo_url") or getattr(settings, "grafana_tempo_url", "") or ""
+        self._service_label: str = cfg.get("service_label") or getattr(settings, "grafana_service_label", "service") or "service"
+        self._log_format: str = cfg.get("log_format") or getattr(settings, "grafana_log_format", "label") or "label"
+
+        # Per-service format cache populated by _detect_log_format().
+        self._format_cache: dict[str, str] = {}
 
         # Auth: API key takes precedence over basic auth
-        api_key = getattr(settings, "grafana_api_key", None)
-        user = getattr(settings, "grafana_user", None)
-        password = getattr(settings, "grafana_password", None)
+        api_key = cfg.get("api_key") or getattr(settings, "grafana_api_key", None)
+        user = cfg.get("user") or getattr(settings, "grafana_user", None)
+        password = cfg.get("password") or getattr(settings, "grafana_password", None)
 
         self._auth: httpx.Auth | None = None
         self._headers: dict[str, str] = {}

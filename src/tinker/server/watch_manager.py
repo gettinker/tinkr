@@ -118,7 +118,7 @@ class WatchManager:
         slack_channel: str | None,
         interval_seconds: int,
     ) -> None:
-        from tinker.backends import get_backend
+        from tinker.backends import get_backend_for_service
 
         db = self._get_db()
         record = db.get_watch(watch_id) or {}
@@ -129,7 +129,7 @@ class WatchManager:
         while True:
             try:
                 await asyncio.sleep(interval_seconds)
-                backend = get_backend()
+                backend = get_backend_for_service(service)
                 anomalies = await backend.detect_anomalies(service)
 
                 current_hash = _anomaly_hash(anomalies)

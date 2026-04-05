@@ -14,7 +14,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from tinker.backends import get_backend
+from tinker.backends import get_backend_for_service
 from tinker.backends.base import ServiceNotFoundError
 from tinker.server.auth import AuthContext, require_auth
 
@@ -52,7 +52,7 @@ async def query_logs(
     req: LogsRequest,
     auth: Annotated[AuthContext, Depends(require_auth)],
 ) -> dict[str, Any]:
-    backend = get_backend()
+    backend = get_backend_for_service(req.service)
     try:
         entries = await backend.query_logs(req.service, req.query, req.start, req.end, req.limit, req.resource_type)
     except ServiceNotFoundError as exc:
@@ -83,7 +83,7 @@ async def get_metrics(
     req: MetricsRequest,
     auth: Annotated[AuthContext, Depends(require_auth)],
 ) -> dict[str, Any]:
-    backend = get_backend()
+    backend = get_backend_for_service(req.service)
     try:
         points = await backend.get_metrics(req.service, req.metric, req.start, req.end)
     except ServiceNotFoundError as exc:
@@ -111,7 +111,7 @@ async def detect_anomalies(
     req: AnomaliesRequest,
     auth: Annotated[AuthContext, Depends(require_auth)],
 ) -> dict[str, Any]:
-    backend = get_backend()
+    backend = get_backend_for_service(req.service)
     try:
         anomalies = await backend.detect_anomalies(req.service, req.window_minutes)
     except ServiceNotFoundError as exc:

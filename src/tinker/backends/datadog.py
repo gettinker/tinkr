@@ -46,12 +46,13 @@ log = structlog.get_logger(__name__)
 class DatadogBackend(ObservabilityBackend):
     """Observability backend for Datadog (Logs + Metrics + APM)."""
 
-    def __init__(self) -> None:
+    def __init__(self, config: dict | None = None) -> None:
         from tinker.config import settings
 
-        api_key = getattr(settings, "datadog_api_key", None)
-        app_key = getattr(settings, "datadog_app_key", None)
-        site = getattr(settings, "datadog_site", None) or "datadoghq.com"
+        cfg = config or {}
+        api_key = cfg.get("api_key") or getattr(settings, "datadog_api_key", None)
+        app_key = cfg.get("app_key") or getattr(settings, "datadog_app_key", None)
+        site = cfg.get("site") or getattr(settings, "datadog_site", None) or "datadoghq.com"
 
         if not api_key or not app_key:
             raise RuntimeError(

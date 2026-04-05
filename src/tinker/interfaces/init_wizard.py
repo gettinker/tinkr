@@ -123,7 +123,9 @@ class ServerWizard:
 
     def __init__(self) -> None:
         self.env_file = Path.home() / ".tinker" / ".env"
-        self._env: dict[str, str] = {}
+        self.toml_file = Path.home() / ".tinker" / "config.toml"
+        self._env: dict[str, str] = {}       # secrets → written to .env
+        self._toml: dict[str, object] = {}   # structure → written to config.toml
 
     def run(self) -> None:
         console.print(Panel.fit(
@@ -140,7 +142,9 @@ class ServerWizard:
             self._step_slack()
             self._step_github()
             self._step_api_key()
+            self._step_services()
             self._write_env()
+            self._write_toml()
             self._show_next_steps()
         except (KeyboardInterrupt, EOFError):
             console.print("\n[yellow]Setup cancelled.[/yellow]")
@@ -159,7 +163,7 @@ class ServerWizard:
             if use_detected:
                 backend = detected["backend"]
                 cloud = detected["cloud"]
-                self._env["TINKER_BACKEND"] = backend
+                self._backend_type = backend
                 self._configure_cloud(cloud)
                 return
 
@@ -178,7 +182,7 @@ class ServerWizard:
             except (ValueError, IndexError):
                 console.print("[red]Invalid choice.[/red]")
 
-        self._env["TINKER_BACKEND"] = backend
+        self._backend_type = backend
         self._configure_cloud(cloud)
 
     def _configure_cloud(self, cloud: str) -> None:
@@ -221,7 +225,11 @@ class ServerWizard:
         region = os.environ.get("AWS_DEFAULT_REGION") or os.environ.get("AWS_REGION") or ""
         if not region:
             region = input("AWS region [us-east-1]: ").strip() or "us-east-1"
-        self._env["AWS_REGION"] = region
+        # Structural config → TOML; credentials come from IAM role (no secret needed)
+        self._toml.setdefault("backends", {})["default"] = {  # type: ignore[index]
+            "type": "cloudwatch",
+            "region": region,
+        }
 
     def _check_gcp_permissions(self) -> None:
         console.print("[dim]Checking GCP Cloud Logging permissions...[/dim]")
@@ -237,21 +245,32 @@ class ServerWizard:
         project = os.environ.get("GOOGLE_CLOUD_PROJECT") or ""
         if not project:
             project = input("GCP project ID: ").strip()
+        backend: dict[str, str] = {"type": "gcp"}
         if project:
-            self._env["GCP_PROJECT_ID"] = project
+            backend["project_id"] = project
+        self._toml.setdefault("backends", {})["default"] = backend  # type: ignore[index]
 
     def _check_azure_permissions(self) -> None:
         console.print("[dim]Checking Azure Monitor permissions...[/dim]")
         workspace_id = os.environ.get("AZURE_WORKSPACE_ID") or ""
         if not workspace_id:
             workspace_id = input("Log Analytics workspace ID: ").strip()
+        subscription_id = input("Azure subscription ID (optional): ").strip()
+        resource_group = input("Azure resource group (optional): ").strip()
+
+        backend: dict[str, str] = {"type": "azure"}
         if workspace_id:
-            self._env["AZURE_WORKSPACE_ID"] = workspace_id
+            backend["workspace_id"] = workspace_id
+        if subscription_id:
+            backend["subscription_id"] = subscription_id
+        if resource_group:
+            backend["resource_group"] = resource_group
+        self._toml.setdefault("backends", {})["default"] = backend  # type: ignore[index]
 
         try:
             from azure.identity import DefaultAzureCredential
             from azure.monitor.query import LogsQueryClient
-            from datetime import datetime, timedelta, timezone
+            from datetime import timedelta
             cred = DefaultAzureCredential()
             qc = LogsQueryClient(cred)
             qc.query_workspace(
@@ -268,18 +287,35 @@ class ServerWizard:
     def _configure_grafana(self) -> None:
         loki = input("Loki URL [http://localhost:3100]: ").strip() or "http://localhost:3100"
         prom = input("Prometheus URL [http://localhost:9090]: ").strip() or "http://localhost:9090"
+        tempo = input("Tempo URL (optional): ").strip()
         api_key = input("Grafana API key (leave blank for no auth): ").strip()
-        self._env["GRAFANA_LOKI_URL"] = loki
-        self._env["GRAFANA_PROMETHEUS_URL"] = prom
-        if api_key:
-            self._env["GRAFANA_API_KEY"] = api_key
+        user = input("Basic auth user (leave blank if not used): ").strip()
+        password = input("Basic auth password (leave blank if not used): ").strip() if user else ""
 
         console.print()
         console.print("[dim]Loki service label — the stream selector label your log shipper sets for the service name.[/dim]")
         console.print("[dim]Common values: service (Promtail default), app (Helm charts), job, service_name, container[/dim]")
         svc_label = input("Service label [service]: ").strip() or "service"
-        if svc_label != "service":
-            self._env["GRAFANA_SERVICE_LABEL"] = svc_label
+
+        # Structural config → TOML; secrets → .env via env: references
+        backend: dict[str, str] = {
+            "type": "grafana",
+            "loki_url": loki,
+            "prometheus_url": prom,
+            "service_label": svc_label,
+        }
+        if tempo:
+            backend["tempo_url"] = tempo
+        if api_key:
+            self._env["GRAFANA_API_KEY"] = api_key
+            backend["api_key"] = "env:GRAFANA_API_KEY"
+        elif user and password:
+            self._env["GRAFANA_USER"] = user
+            self._env["GRAFANA_PASSWORD"] = password
+            backend["user"] = "env:GRAFANA_USER"
+            backend["password"] = "env:GRAFANA_PASSWORD"
+
+        self._toml.setdefault("backends", {})["default"] = backend  # type: ignore[index]
 
     def _configure_datadog(self) -> None:
         api_key = input("Datadog API key: ").strip()
@@ -289,14 +325,21 @@ class ServerWizard:
             self._env["DATADOG_API_KEY"] = api_key
         if app_key:
             self._env["DATADOG_APP_KEY"] = app_key
-        self._env["DATADOG_SITE"] = site
+        self._toml.setdefault("backends", {})["default"] = {  # type: ignore[index]
+            "type": "datadog",
+            "site": site,
+            "api_key": "env:DATADOG_API_KEY",
+            "app_key": "env:DATADOG_APP_KEY",
+        }
 
     def _configure_elastic(self) -> None:
         url = input("Elasticsearch URL [http://localhost:9200]: ").strip() or "http://localhost:9200"
         api_key = input("Elasticsearch API key (leave blank for no auth): ").strip()
-        self._env["ELASTICSEARCH_URL"] = url
+        backend: dict[str, str] = {"type": "elastic", "url": url}
         if api_key:
             self._env["ELASTICSEARCH_API_KEY"] = api_key
+            backend["api_key"] = "env:ELASTICSEARCH_API_KEY"
+        self._toml.setdefault("backends", {})["default"] = backend  # type: ignore[index]
 
     def _step_llm(self) -> None:
         console.print()
@@ -359,8 +402,7 @@ class ServerWizard:
             except (ValueError, IndexError):
                 console.print("[red]Invalid choice.[/red]")
 
-        self._env["TINKER_DEFAULT_MODEL"] = default_model
-        self._env["TINKER_DEEP_RCA_MODEL"] = deep_model
+        self._toml["llm"] = {"default_model": default_model, "deep_rca_model": deep_model}
         console.print(f"[green]✓[/green] Default model:  [dim]{default_model}[/dim]")
         console.print(f"[green]✓[/green] Deep RCA model: [dim]{deep_model}[/dim]")
 
@@ -378,7 +420,11 @@ class ServerWizard:
         self._env["SLACK_BOT_TOKEN"] = bot_token
 
         channel = input("Default alert channel [#incidents]: ").strip() or "#incidents"
-        self._env["SLACK_ALERTS_CHANNEL"] = channel
+        # Token is a secret → .env; channel is structure → TOML
+        self._toml["slack"] = {
+            "bot_token": "env:SLACK_BOT_TOKEN",
+            "alerts_channel": channel,
+        }
 
         # Test it
         console.print("[dim]Testing Slack connection...[/dim]")
@@ -423,34 +469,34 @@ class ServerWizard:
 
         self._env["GITHUB_TOKEN"] = token
 
-        # Collect repos — one default + optional service-specific overrides
+        # Collect default repo — structure → TOML
         console.print()
         console.print(
             "[dim]Enter the default repository (used when no service-specific mapping exists).[/dim]"
         )
         default_repo = input("Default repository (owner/repo): ").strip()
+        github_section: dict[str, str] = {"token": "env:GITHUB_TOKEN"}
         if default_repo:
-            self._env["GITHUB_REPO"] = default_repo
+            github_section["default_repo"] = default_repo
+        self._toml["github"] = github_section
 
-        # Service-specific repos
+        # Service-specific repos are stored under [services.*].repo in TOML;
+        # prompt here so the user doesn't need to hand-edit the file.
         console.print()
         console.print(
             "[dim]If different services live in different repos, add per-service mappings.\n"
             "Example: payments-api → acme/payments, auth-service → acme/auth[/dim]"
         )
         if _ask_yes_no("Add service-specific repo mappings?", default=False):
-            repos_map: dict[str, str] = {}
+            services: dict[str, dict] = self._toml.setdefault("services", {})  # type: ignore[assignment]
             while True:
                 svc = input("  Service name (or Enter to finish): ").strip()
                 if not svc:
                     break
                 repo = input(f"  Repo for {svc} (owner/repo): ").strip()
                 if repo:
-                    repos_map[svc] = repo
+                    services.setdefault(svc, {})["repo"] = repo
                     console.print(f"  [green]✓[/green] {svc} → {repo}")
-            if repos_map:
-                import json
-                self._env["GITHUB_REPOS"] = json.dumps(repos_map)
 
     def _step_api_key(self) -> None:
         console.print()
@@ -464,8 +510,13 @@ class ServerWizard:
 
         raw_key = secrets.token_urlsafe(32)
         key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-        hashed_entry = f'{{"hash": "{key_hash}", "subject": "admin", "roles": ["oncall"]}}'
-        self._env["TINKER_API_KEYS"] = f"[{hashed_entry}]"
+
+        # Hashed key entry goes into TOML [auth] — the hash is not secret
+        self._toml["auth"] = {
+            "api_keys": [
+                {"hash": key_hash, "subject": "admin", "roles": ["oncall"]},
+            ],
+        }
 
         console.print(Panel(
             f"[bold]Raw API key[/bold] (give this to CLI users):\n\n"
@@ -474,20 +525,66 @@ class ServerWizard:
             border_style="yellow",
         ))
 
-    def _write_env(self) -> None:
+    def _step_services(self) -> None:
         console.print()
-        console.print(Rule("[bold]Writing configuration[/bold]"))
+        console.print(Rule("[bold]Step 6 — Per-service config (optional)[/bold]"))
+        console.print()
+        console.print(
+            "[dim]Configure per-service log format so Tinker can query level correctly\n"
+            "across JSON, logfmt, and log4j log styles.[/dim]"
+        )
+        console.print()
+
+        if not _ask_yes_no("Add per-service log format config?", default=False):
+            return
+
+        FORMAT_CHOICES = ["label", "json", "logfmt", "pattern"]
+        services: dict[str, dict] = self._toml.setdefault("services", {})  # type: ignore[assignment]
+
+        while True:
+            svc = input("  Service name (or Enter to finish): ").strip()
+            if not svc:
+                break
+
+            console.print("  Log formats:")
+            for i, fmt in enumerate(FORMAT_CHOICES, 1):
+                hints = {
+                    "label": "level is a Loki stream label (fastest)",
+                    "json":  '{"level":"error","msg":"..."}',
+                    "logfmt": "level=error msg=...",
+                    "pattern": "2026-01-01 ERROR SomeClass: ...",
+                }
+                console.print(f"    [{i}] {fmt:<8}  [dim]{hints[fmt]}[/dim]")
+
+            while True:
+                raw = input("  Select format [1]: ").strip() or "1"
+                try:
+                    fmt = FORMAT_CHOICES[int(raw) - 1]
+                    break
+                except (ValueError, IndexError):
+                    console.print("  [red]Invalid choice.[/red]")
+
+            level_field = input("  Level field name [level]: ").strip() or "level"
+
+            services.setdefault(svc, {}).update({"log_format": fmt, "log_level_field": level_field})
+            console.print(f"  [green]✓[/green] {svc}: format={fmt}, level_field={level_field}")
+
+    def _write_env(self) -> None:
+        """Write secrets-only .env file."""
+        if not self._env:
+            return
+        console.print()
+        console.print(Rule("[bold]Writing secrets (.env)[/bold]"))
         lines = [
-            "# Tinker Server configuration",
+            "# Tinker secrets — DO NOT COMMIT",
             "# Generated by `tinker init server`",
-            "# Location: ~/.tinker/.env — loaded automatically by `tinker server`",
+            "# Location: ~/.tinker/.env",
             "",
         ]
         for k, v in self._env.items():
             if '"' in v:
-                # JSON values contain double quotes — wrap in single quotes
                 lines.append(f"{k}='{v}'")
-            elif " " in v or "[" in v:
+            elif " " in v:
                 lines.append(f'{k}="{v}"')
             else:
                 lines.append(f"{k}={v}")
@@ -496,10 +593,92 @@ class ServerWizard:
         self.env_file.write_text("\n".join(lines) + "\n")
         console.print(f"[green]✓ Written:[/green] {self.env_file}")
 
+    def _write_toml(self) -> None:
+        """Write structural config to config.toml using manual TOML serialisation."""
+        console.print()
+        console.print(Rule("[bold]Writing config.toml[/bold]"))
+
+        lines: list[str] = [
+            "# Tinker server configuration",
+            "# Generated by `tinker init server`",
+            "# Secrets are in ~/.tinker/.env — reference them here as env:VAR_NAME",
+            "",
+        ]
+
+        def _val(v: object) -> str:
+            if isinstance(v, bool):
+                return "true" if v else "false"
+            if isinstance(v, int):
+                return str(v)
+            return f'"{v}"'
+
+        def _write_section(key: str, data: dict) -> None:
+            lines.append(f"[{key}]")
+            for k, v in data.items():
+                if not isinstance(v, (dict, list)):
+                    lines.append(f"{k} = {_val(v)}")
+            lines.append("")
+
+        def _write_array_of_tables(key: str, items: list) -> None:
+            for item in items:
+                lines.append(f"[[{key}]]")
+                for k, v in item.items():
+                    lines.append(f"{k} = {_val(v)}")
+                lines.append("")
+
+        # [server]
+        lines += ["[server]", 'host = "0.0.0.0"', "port = 8000", ""]
+
+        # [llm]
+        if llm := self._toml.get("llm"):
+            _write_section("llm", llm)  # type: ignore[arg-type]
+
+        # [auth] — api_keys as array of inline tables
+        if auth := self._toml.get("auth"):
+            lines.append("[auth]")
+            key_entries = auth.get("api_keys", [])  # type: ignore[union-attr]
+            for entry in key_entries:
+                roles_str = ", ".join(f'"{r}"' for r in entry.get("roles", []))
+                lines.append(
+                    f'api_keys = [{{hash = "{entry["hash"]}", '
+                    f'subject = "{entry["subject"]}", '
+                    f"roles = [{roles_str}]}}]"
+                )
+            lines.append("")
+
+        # [backends.*]
+        for name, backend in (self._toml.get("backends") or {}).items():  # type: ignore[union-attr]
+            lines.append(f"[backends.{name}]")
+            for k, v in backend.items():  # type: ignore[union-attr]
+                lines.append(f"{k} = {_val(v)}")
+            lines.append("")
+
+        # [services.*]
+        for name, svc in (self._toml.get("services") or {}).items():  # type: ignore[union-attr]
+            lines.append(f"[services.{name}]")
+            for k, v in svc.items():  # type: ignore[union-attr]
+                lines.append(f"{k} = {_val(v)}")
+            lines.append("")
+
+        # [slack]
+        if slack := self._toml.get("slack"):
+            _write_section("slack", slack)  # type: ignore[arg-type]
+
+        # [github]
+        if github := self._toml.get("github"):
+            _write_section("github", github)  # type: ignore[arg-type]
+
+        self.toml_file.parent.mkdir(parents=True, exist_ok=True)
+        self.toml_file.write_text("\n".join(lines) + "\n")
+        console.print(f"[green]✓ Written:[/green] {self.toml_file}")
+
     def _show_next_steps(self) -> None:
         console.print()
         console.print(Panel(
             "[bold]Setup complete![/bold]\n\n"
+            f"Config: [dim]{self.toml_file}[/dim]\n"
+            f"Secrets: [dim]{self.env_file}[/dim]\n\n"
+            "To add more services or backends, edit [bold]~/.tinker/config.toml[/bold] directly.\n\n"
             "Start the server:\n\n"
             f"  [bold cyan]tinker server[/bold cyan]\n\n"
             "Or with a custom port:\n\n"
