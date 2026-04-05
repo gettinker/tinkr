@@ -26,6 +26,7 @@ from tinker.query.ast import (
     QueryNode,
     TextFilter,
     normalise_field,
+    normalise_value,
 )
 
 # ── Tokeniser ─────────────────────────────────────────────────────────────────
@@ -136,7 +137,7 @@ class _Parser:
                     if v.upper() == "OR":
                         self._consume()
                         continue
-                    values.append(self._consume())
+                    values.append(normalise_value(field, self._consume()))
                 self._consume()  # ')'
                 return FieldFilter(field=field, values=values)
 
@@ -146,10 +147,8 @@ class _Parser:
                 raise ValueError(f"Expected value after '{field}:'")
             if val.startswith('"') or val.startswith("'"):
                 val = val[1:-1]
-            else:
-                pass
             self._consume()
-            return FieldFilter(field=field, values=[val])
+            return FieldFilter(field=field, values=[normalise_value(field, val)])
 
         # Bare word — text filter
         word = self._consume()

@@ -70,6 +70,20 @@ FIELD_ALIASES: dict[str, str] = {
     "span": "span_id",
 }
 
+# Fields whose values should always be lowercased for backend compatibility.
+# e.g. Loki stores level="error", not level="ERROR".
+_LOWERCASE_VALUE_FIELDS = {"level", "severity"}
+
 
 def normalise_field(name: str) -> str:
     return FIELD_ALIASES.get(name.lower(), name.lower())
+
+
+def normalise_value(field: str, value: str) -> str:
+    """Normalise a field value.  Level/severity are always lowercased so that
+    ``level:ERROR``, ``level:error``, and ``level:Error`` all resolve the same
+    way in every backend.
+    """
+    if field in _LOWERCASE_VALUE_FIELDS:
+        return value.lower()
+    return value

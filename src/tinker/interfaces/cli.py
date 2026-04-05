@@ -88,6 +88,14 @@ def server(
     if debug:
         log_level = "debug"
         logging.basicConfig(level=logging.DEBUG)
+        # Silence noisy third-party debug output — only tinker's own loggers stay at DEBUG
+        for _noisy in (
+            "httpcore", "httpx", "hpack", "h11", "h2",
+            "botocore", "boto3", "urllib3", "asyncio",
+            "google.auth", "google.api_core",
+            "azure.core", "azure.identity",
+        ):
+            logging.getLogger(_noisy).setLevel(logging.WARNING)
 
     console.print(Panel.fit(
         f"[bold cyan]Tinker Server[/bold cyan]  [dim]v{__version__}[/dim]\n"
