@@ -67,6 +67,7 @@ def server(
     port: int = typer.Option(8000, "--port", "-p", help="Bind port"),
     reload: bool = typer.Option(False, "--reload", help="Auto-reload on code changes (dev only)"),
     log_level: str = typer.Option("info", "--log-level", help="Uvicorn log level"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging — shows every query fired to observability backends"),
 ) -> None:
     """[bold cyan]Start the Tinker server.[/bold cyan]
 
@@ -79,13 +80,20 @@ def server(
       tinker server
       tinker server --port 9000
       tinker server --host 127.0.0.1 --reload   # dev mode
+      tinker server --debug                      # show backend queries
     """
+    import logging
     import uvicorn
+
+    if debug:
+        log_level = "debug"
+        logging.basicConfig(level=logging.DEBUG)
 
     console.print(Panel.fit(
         f"[bold cyan]Tinker Server[/bold cyan]  [dim]v{__version__}[/dim]\n"
         f"Listening on [bold]http://{host}:{port}[/bold]\n"
-        f"Docs: [link]http://{host}:{port}/docs[/link]",
+        f"Docs: [link]http://{host}:{port}/docs[/link]"
+        + ("\n[yellow]debug mode — backend queries will be logged[/yellow]" if debug else ""),
         border_style="cyan",
     ))
 

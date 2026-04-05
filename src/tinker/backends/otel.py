@@ -123,6 +123,8 @@ class OTelBackend(ObservabilityBackend):
             },
         }
 
+        log.debug("otel.query_logs", service=service, index=self._log_index, query=dsl["query"])
+
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 f"{self._os_url}/{self._log_index}/_search",

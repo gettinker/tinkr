@@ -82,8 +82,6 @@ class DatadogBackend(ObservabilityBackend):
         Raw Datadog queries (starting with '@' or 'service:') are passed through.
         `resource_type` is accepted for API consistency but is not used by Datadog.
         """
-        log.debug("datadog.query_logs", service=service)
-
         if query.startswith("@") or query.startswith("service:"):
             # Raw Datadog query — pass through
             dd_query = query
@@ -91,6 +89,8 @@ class DatadogBackend(ObservabilityBackend):
             from tinker.query import parse_query, translate_for
             ast = parse_query(query)
             dd_query = translate_for("datadog", ast, service=service)
+
+        log.debug("datadog.query_logs", service=service, query=dd_query)
 
         payload: dict[str, Any] = {
             "filter": {

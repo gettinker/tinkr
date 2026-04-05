@@ -80,8 +80,6 @@ class AzureBackend(ObservabilityBackend):
         """
         from azure.monitor.query import LogsQueryStatus
 
-        log.debug("azure.query_logs", service=service)
-
         if any(kw in query for kw in ["|", "where ", "search ", "union "]):
             # Raw KQL — pass through
             kql = query
@@ -90,6 +88,7 @@ class AzureBackend(ObservabilityBackend):
             ast = parse_query(query)
             kql = translate_for("azure", ast, service=service, resource_type=resource_type) + f" | take {limit}"
 
+        log.debug("azure.query_logs", service=service, kql=kql)
         timespan = (end - start)
 
         try:

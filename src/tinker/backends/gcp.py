@@ -34,8 +34,6 @@ class GCPBackend(ObservabilityBackend):
     ) -> list[LogEntry]:
         import asyncio
 
-        log.debug("gcp.query_logs", service=service)
-
         # Translate unified query to GCP filter; raw GCP filters (containing '=')
         # that look like native syntax are passed through unchanged.
         if "resource.labels" in query or query == "*":
@@ -55,6 +53,8 @@ class GCPBackend(ObservabilityBackend):
                 f'AND timestamp<="{end.isoformat()}"'
             )
         filter_str = native_filter
+
+        log.debug("gcp.query_logs", service=service, filter=filter_str)
 
         entries = await asyncio.to_thread(
             lambda: list(

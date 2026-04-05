@@ -72,7 +72,7 @@ class CloudWatchBackend(ObservabilityBackend):
                 log.warning("cloudwatch.no_log_groups_found", service=service)
                 raise ServiceNotFoundError(service, backend="CloudWatch")
 
-        log.debug("cloudwatch.query_logs", service=service, log_groups=log_groups)
+        log.debug("cloudwatch.query_logs", service=service, log_groups=log_groups, query=insights_query)
 
         start_kwargs: dict[str, Any] = {
             "startTime": int(start.timestamp()),

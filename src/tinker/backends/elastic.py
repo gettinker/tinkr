@@ -35,8 +35,6 @@ class ElasticBackend(ObservabilityBackend):
         limit: int = 100,
         resource_type: str | None = None,
     ) -> list[LogEntry]:
-        log.debug("elastic.query_logs", service=service)
-
         from tinker.query import parse_query, translate_for
         from tinker.query.translators.elastic import resolve_index
 
@@ -64,7 +62,7 @@ class ElasticBackend(ObservabilityBackend):
             },
         }
 
-        log.debug("elastic.query_logs", service=service, index=index)
+        log.debug("elastic.query_logs", service=service, index=index, query=query_dsl)
         response = await self._client.search(index=index, body=body)
         hits = response["hits"]["hits"]
         return [self._parse_hit(h) for h in hits]
