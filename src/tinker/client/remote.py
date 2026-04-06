@@ -234,12 +234,15 @@ class RemoteClient:
     async def create_watch(
         self,
         service: str,
-        slack_channel: str | None = None,
+        notifier: str | None = None,
+        destination: str | None = None,
         interval_seconds: int = 60,
     ) -> dict[str, Any]:
         body: dict = {"service": service, "interval_seconds": interval_seconds}
-        if slack_channel:
-            body["slack_channel"] = slack_channel
+        if notifier:
+            body["notifier"] = notifier
+        if destination:
+            body["destination"] = destination
         async with self._client() as c:
             resp = await c.post("/api/v1/watches", json=body)
             resp.raise_for_status()

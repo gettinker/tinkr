@@ -1,9 +1,22 @@
-"""Tinker CLI."""
+"""Tinker CLI.
+
+Structure
+---------
+Each command is three lines:
+  1. Typer decorator — defines the public interface (flags, help, types)
+  2. Handler call    — fetches / filters data via interfaces/handlers.py
+  3. Renderer call   — formats result via interfaces/renderers.py
+
+Adding a new command
+--------------------
+1. Add a handler function in interfaces/handlers.py.
+2. Add a render function in interfaces/renderers.py.
+3. Add a @app.command() here that wires them together.
+"""
 
 from __future__ import annotations
 
 import asyncio
-import sys
 from typing import Optional
 
 import structlog
@@ -13,6 +26,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from tinker import __version__
+from tinker.interfaces.renderers import OutputFormat
 
 app = typer.Typer(
     name="tinker",
@@ -24,6 +38,8 @@ app = typer.Typer(
 console = Console()
 log = structlog.get_logger(__name__)
 
+
+# ── Error handling ────────────────────────────────────────────────────────────
 
 def _run(coro) -> None:
     """Run a coroutine, printing server errors cleanly instead of a traceback."""
@@ -37,17 +53,12 @@ def _run(coro) -> None:
             detail = str(exc)
         console.print(f"[red]Server error:[/red] {detail}")
         raise typer.Exit(1)
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
     except Exception as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
-
-SEVERITY_COLORS = {
-    "critical": "bold red",
-    "high": "red",
-    "medium": "yellow",
-    "low": "green",
-    "unknown": "white",
-}
 
 
 def _get_client():
@@ -71,9 +82,8 @@ def server(
 ) -> None:
     """[bold cyan]Start the Tinker server.[/bold cyan]
 
-    Run this on any machine that has access to your cloud observability stack
-    (CloudWatch, GCP, Azure, Grafana, Datadog, etc.). The server exposes a REST API
-    that the CLI connects to.
+    Run this on any machine that has access to your cloud observability stack.
+    The server exposes a REST API that the CLI connects to.
 
     Examples:
 
@@ -88,7 +98,6 @@ def server(
     if debug:
         log_level = "debug"
         logging.basicConfig(level=logging.DEBUG)
-        # Silence noisy third-party debug output — only tinker's own loggers stay at DEBUG
         for _noisy in (
             "httpcore", "httpx", "hpack", "h11", "h2",
             "botocore", "boto3", "urllib3", "asyncio",
@@ -126,11 +135,8 @@ def init_server() -> None:
     """[bold cyan]Set up a Tinker server on this machine.[/bold cyan]
 
     Auto-detects cloud environment, checks observability permissions,
-    configures Slack (optional), and writes [bold]~/.tinker/.env[/bold].
-
-    Examples:
-
-      tinker init server
+    configures Slack / notifiers, generates API key, and writes
+    [bold]~/.tinker/config.toml[/bold] + [bold]~/.tinker/.env[/bold].
     """
     from tinker.interfaces.init_wizard import ServerWizard
     ServerWizard().run()
@@ -141,15 +147,13 @@ def init_cli() -> None:
     """[bold cyan]Connect this machine's CLI to a Tinker server.[/bold cyan]
 
     Asks for the server URL and API token, tests the connection,
-    and writes ~/.tinker/config.
-
-    Examples:
-
-      tinker init cli
+    and writes [bold]~/.tinker/config[/bold].
     """
     from tinker.interfaces.init_wizard import CLIWizard
     CLIWizard().run()
 
+
+# ── Doctor ────────────────────────────────────────────────────────────────────
 
 @app.command()
 def doctor() -> None:
@@ -157,13 +161,70 @@ def doctor() -> None:
     _run(_doctor())
 
 
+async def _doctor() -> None:
+    client = _get_client()
+    console.print(Panel.fit("[bold]Tinker Doctor[/bold]", border_style="cyan"))
+    console.print()
+    results: list[tuple[str, bool, str]] = []
+
+    try:
+        data = await client.health()
+        results.append(("Server", True, f"v{data.get('version','')}  backend={data.get('backend','')}"))
+    except Exception as exc:
+        results.append(("Server", False, str(exc)[:80]))
+        _print_check_table(results)
+        console.print()
+        console.print(
+            "[red]Cannot reach Tinker server.[/red]\n"
+            "[dim]Run [bold]tinker server[/bold] on the target machine, "
+            "then [bold]tinker init cli[/bold] to point this CLI at it.[/dim]"
+        )
+        raise typer.Exit(1)
+
+    try:
+        from datetime import timezone, timedelta, datetime as dt
+        end = dt.now(timezone.utc)
+        start = end - timedelta(minutes=5)
+        await client.query_logs("_health_check_", "*", start, end, limit=1)
+        results.append(("Backend", True, "query ok"))
+    except Exception as exc:
+        msg = str(exc)[:60]
+        is_ok = not any(w in msg.lower() for w in ["auth", "credential", "403", "401"])
+        results.append(("Backend", is_ok, msg))
+
+    _print_check_table(results)
+
+
+def _print_check_table(results: list[tuple[str, bool, str]]) -> None:
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Check", width=12)
+    table.add_column("Status", width=8)
+    table.add_column("Detail")
+    all_ok = True
+    for name, ok, detail in results:
+        status = "[green]✓ OK[/green]" if ok else "[red]✗ FAIL[/red]"
+        if not ok:
+            all_ok = False
+        table.add_row(name, status, detail)
+    console.print(table)
+    console.print()
+    if all_ok:
+        console.print("[green bold]All checks passed.[/green bold]")
+    else:
+        console.print("[red]Some checks failed. Review the details above.[/red]")
+        raise typer.Exit(1)
+
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+
 @app.command()
 def logs(
     service: str = typer.Argument(..., help="Service name"),
     query: str = typer.Option("*", "--query", "-q", help="Log query string"),
     since: str = typer.Option("30m", "--since", "-s"),
     limit: int = typer.Option(50, "--limit", "-n"),
-    resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type: ecs, lambda, eks, rds, cloudrun, aks, aca"),
+    resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type: ecs, lambda, eks, rds, cloudrun, aks"),
+    output: OutputFormat = typer.Option(OutputFormat.table, "--output", "-o", help="Output format"),
 ) -> None:
     """[bold cyan]Fetch recent logs for a service.[/bold cyan]
 
@@ -171,9 +232,21 @@ def logs(
 
       tinker logs payments-api
       tinker logs payments-api --resource ecs -q "level:ERROR" --since 1h
+      tinker logs payments-api --output jsonlines | jq .message
     """
-    _run(_logs(service, query, since, limit, resource))
+    _run(_logs(service, query, since, limit, resource, output))
 
+
+async def _logs(service, query, since, limit, resource, output) -> None:
+    from tinker.interfaces.handlers import get_logs
+    from tinker.interfaces.renderers import render_logs
+    client = _get_client()
+    with console.status("Querying..."):
+        entries = await get_logs(client, service, query, since, limit, resource)
+    render_logs(entries, output)
+
+
+# ── Tail ──────────────────────────────────────────────────────────────────────
 
 @app.command()
 def tail(
@@ -181,6 +254,7 @@ def tail(
     query: str = typer.Option("*", "--query", "-q", help="Filter query"),
     poll: float = typer.Option(2.0, "--poll", "-p", help="Poll interval in seconds"),
     resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type"),
+    output: OutputFormat = typer.Option(OutputFormat.table, "--output", "-o", help="Output format"),
 ) -> None:
     """[bold cyan]Stream live logs for a service (Ctrl-C to stop).[/bold cyan]
 
@@ -188,9 +262,31 @@ def tail(
 
       tinker tail payments-api
       tinker tail auth-service -q 'level:(ERROR OR WARN)'
+      tinker tail payments-api --output jsonlines | jq .message
     """
-    _run(_tail(service, query, poll, resource))
+    _run(_tail(service, query, poll, resource, output))
 
+
+async def _tail(service, query, poll, resource, output) -> None:
+    from tinker.interfaces.handlers import stream_logs
+    from tinker.interfaces.renderers import render_log_entry
+    client = _get_client()
+    if output == OutputFormat.table:
+        console.print(
+            f"[bold green]Tailing[/bold green] [cyan]{service}[/cyan]"
+            + (f" · [dim]{query}[/dim]" if query != "*" else "")
+            + "  [dim](Ctrl-C to stop)[/dim]"
+        )
+        console.print()
+    try:
+        async for entry in stream_logs(client, service, query, poll, resource):
+            render_log_entry(entry, output)
+    except KeyboardInterrupt:
+        if output == OutputFormat.table:
+            console.print("\n[dim]Stopped.[/dim]")
+
+
+# ── Metrics ───────────────────────────────────────────────────────────────────
 
 @app.command()
 def metrics(
@@ -198,6 +294,7 @@ def metrics(
     metric: str = typer.Argument(..., help="Metric name"),
     since: str = typer.Option("1h", "--since", "-s"),
     resource: Optional[str] = typer.Option(None, "--resource", "-r"),
+    output: OutputFormat = typer.Option(OutputFormat.table, "--output", "-o", help="Output format"),
 ) -> None:
     """[bold cyan]Show metric values for a service.[/bold cyan]
 
@@ -205,9 +302,21 @@ def metrics(
 
       tinker metrics payments-api Errors
       tinker metrics auth-service http_requests_total --since 2h
+      tinker metrics payments-api Errors --output json
     """
-    _run(_metrics(service, metric, since, resource))
+    _run(_metrics(service, metric, since, resource, output))
 
+
+async def _metrics(service, metric, since, resource, output) -> None:
+    from tinker.interfaces.handlers import get_metrics
+    from tinker.interfaces.renderers import render_metrics
+    client = _get_client()
+    with console.status("Querying..."):
+        points = await get_metrics(client, service, metric, since, resource)
+    render_metrics(points, output)
+
+
+# ── Anomaly ───────────────────────────────────────────────────────────────────
 
 @app.command()
 def anomaly(
@@ -215,7 +324,7 @@ def anomaly(
     since: str = typer.Option("1h", "--since", "-s", help="Look-back window: 30m, 1h, 2h, 1d"),
     severity: Optional[str] = typer.Option(None, "--severity", help="Filter: low/medium/high/critical"),
     resource: Optional[str] = typer.Option(None, "--resource", "-r"),
-    json_out: bool = typer.Option(False, "--json", help="Output as JSON"),
+    output: OutputFormat = typer.Option(OutputFormat.table, "--output", "-o", help="Output format"),
 ) -> None:
     """[bold cyan]Detect anomalies for a service (fast, no LLM).[/bold cyan]
 
@@ -223,10 +332,22 @@ def anomaly(
 
       tinker anomaly payments-api
       tinker anomaly payments-api --since 2h --severity high
-      tinker anomaly payments-api --json
+      tinker anomaly payments-api --output json
+      tinker anomaly payments-api --output jsonlines | jq .severity
     """
-    _run(_anomaly(service, since, severity, resource, json_out))
+    _run(_anomaly(service, since, severity, resource, output))
 
+
+async def _anomaly(service, since, severity, resource, output) -> None:
+    from tinker.interfaces.handlers import get_anomalies
+    from tinker.interfaces.renderers import render_anomalies
+    client = _get_client()
+    with console.status(f"[bold green]Detecting anomalies for {service}...[/bold green]"):
+        anomalies = await get_anomalies(client, service, since, severity, resource)
+    render_anomalies(anomalies, output, service=service, since=since)
+
+
+# ── Monitor REPL ──────────────────────────────────────────────────────────────
 
 @app.command()
 def monitor(
@@ -249,7 +370,15 @@ def monitor(
       tinker monitor payments-api
       tinker monitor payments-api --since 2h
     """
-    _run(_monitor_repl(service, since))
+    _run(_monitor_repl(service, since, resource))
+
+
+async def _monitor_repl(service: str, since: str, resource: str | None) -> None:
+    from tinker.interfaces.handlers import parse_since
+    from tinker.interfaces.monitor_repl import MonitorREPL
+    _, window = parse_since(since)
+    client = _get_client()
+    await MonitorREPL(service=service, client=client, window_minutes=window, resource=resource).run()
 
 
 # ── Watch commands ────────────────────────────────────────────────────────────
@@ -261,29 +390,37 @@ app.add_typer(watch_app, name="watch")
 @watch_app.command("start")
 def watch_start(
     service: str = typer.Argument(..., help="Service to watch"),
-    channel: Optional[str] = typer.Option(
-        None, "--channel", "-c",
-        help="Slack channel for alerts, e.g. #incidents (uses server default if omitted)",
+    notifier: Optional[str] = typer.Option(
+        None, "--notifier", "-n",
+        help="Notifier name from [notifiers.*] in config.toml (default: 'default')",
+    ),
+    destination: Optional[str] = typer.Option(
+        None, "--destination", "-d",
+        help="Platform-specific target override, e.g. '#payments-oncall' for Slack",
     ),
     interval: int = typer.Option(60, "--interval", "-i", help="Poll interval in seconds"),
 ) -> None:
     """[bold cyan]Start a watch for a service on the Tinker server.[/bold cyan]
 
-    The server polls for anomalies on a schedule and posts to Slack when
-    the anomaly set changes.
+    The server polls for anomalies on a schedule and dispatches alerts via the
+    configured notifier when the anomaly set changes.
 
     Examples:
 
-      tinker watch start payments-api --channel "#incidents"
+      tinker watch start payments-api
+      tinker watch start payments-api --notifier discord-ops
+      tinker watch start payments-api --notifier default --destination "#payments-oncall"
       tinker watch start auth-service --interval 120
     """
-    _run(_watch_start(service, channel, interval))
+    _run(_watch_start(service, notifier, destination, interval))
 
 
 @watch_app.command("list")
-def watch_list() -> None:
+def watch_list(
+    output: OutputFormat = typer.Option(OutputFormat.table, "--output", "-o"),
+) -> None:
     """[bold cyan]List watches on the Tinker server.[/bold cyan]"""
-    _run(_watch_list())
+    _run(_watch_list(output))
 
 
 @watch_app.command("stop")
@@ -294,268 +431,42 @@ def watch_stop(
     _run(_watch_stop(watch_id))
 
 
-@app.command()
-def version() -> None:
-    """Print the Tinker version."""
-    console.print(f"tinker {__version__}")
-
-
-# ── Async implementations ─────────────────────────────────────────────────────
-
-async def _doctor() -> None:
-    client = _get_client()
-    console.print(Panel.fit("[bold]Tinker Doctor[/bold]", border_style="cyan"))
-    console.print()
-    results: list[tuple[str, bool, str]] = []
-
-    try:
-        data = await client.health()
-        results.append(("Server", True, f"v{data.get('version','')}  backend={data.get('backend','')}"))
-    except Exception as exc:
-        results.append(("Server", False, str(exc)[:80]))
-        _print_doctor_table(results)
-        console.print()
-        console.print(
-            "[red]Cannot reach Tinker server.[/red]\n"
-            "[dim]Run [bold]tinker server[/bold] on the target machine, "
-            "then [bold]tinker init cli[/bold] to point this CLI at it.[/dim]"
-        )
-        raise typer.Exit(1)
-
-    try:
-        from datetime import timezone, timedelta, datetime as dt
-        end = dt.now(timezone.utc)
-        start = end - timedelta(minutes=5)
-        await client.query_logs("_health_check_", "*", start, end, limit=1)
-        results.append(("Backend", True, "query ok"))
-    except Exception as exc:
-        msg = str(exc)[:60]
-        is_ok = not any(w in msg.lower() for w in ["auth", "credential", "403", "401"])
-        results.append(("Backend", is_ok, msg))
-
-    _print_doctor_table(results)
-
-
-def _print_doctor_table(results: list[tuple[str, bool, str]]) -> None:
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("Check", width=12)
-    table.add_column("Status", width=8)
-    table.add_column("Detail")
-    all_ok = True
-    for name, ok, detail in results:
-        status = "[green]✓ OK[/green]" if ok else "[red]✗ FAIL[/red]"
-        if not ok:
-            all_ok = False
-        table.add_row(name, status, detail)
-    console.print(table)
-    console.print()
-    if all_ok:
-        console.print("[green bold]All checks passed.[/green bold]")
-    else:
-        console.print("[red]Some checks failed. Review the details above.[/red]")
-        raise typer.Exit(1)
-
-
-
-async def _logs(service: str, query: str, since: str, limit: int, resource_type: str | None = None) -> None:
-    client = _get_client()
-    end = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
-    start = client.parse_since(since)
-    with console.status("Querying..."):
-        entries = await client.query_logs(service, query, start, end, limit, resource_type=resource_type)
-    if not entries:
-        console.print("[dim]No log entries found.[/dim]")
-        return
-    table = Table(show_header=True, header_style="bold magenta")
-    table.add_column("Timestamp", style="dim", width=20)
-    table.add_column("Level", width=8)
-    table.add_column("Message")
-    level_styles = {"ERROR": "red", "CRITICAL": "bold red", "WARN": "yellow", "INFO": "green"}
-    for entry in entries:
-        style = level_styles.get(entry.level, "white")
-        table.add_row(
-            entry.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-            f"[{style}]{entry.level}[/{style}]",
-            entry.message[:200],
-        )
-    console.print(table)
-
-
-async def _tail(service: str, query: str, poll: float, resource_type: str | None = None) -> None:
-    client = _get_client()
-    level_styles = {"ERROR": "red", "CRITICAL": "bold red", "WARN": "yellow", "WARNING": "yellow", "INFO": "green", "DEBUG": "dim"}
-    console.print(
-        f"[bold green]Tailing[/bold green] [cyan]{service}[/cyan]"
-        + (f" · [dim]{query}[/dim]" if query != "*" else "")
-        + "  [dim](Ctrl-C to stop)[/dim]"
-    )
-    console.print()
-    try:
-        async for entry in client.tail_logs(service, query, poll_interval=poll, resource_type=resource_type):
-            style = level_styles.get(entry.level.upper(), "white")
-            ts = entry.timestamp.strftime("%H:%M:%S")
-            level = f"[{style}]{entry.level:<8}[/{style}]"
-            console.print(f"[dim]{ts}[/dim]  {level}  {entry.message[:200]}")
-    except KeyboardInterrupt:
-        console.print("\n[dim]Stopped.[/dim]")
-
-
-async def _metrics(service: str, metric: str, since: str, resource_type: str | None = None) -> None:
-    client = _get_client()
-    end = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
-    start = client.parse_since(since)
-    with console.status("Querying..."):
-        points = await client.get_metrics(service, metric, start, end, resource_type=resource_type)
-    if not points:
-        console.print("[dim]No metric data found.[/dim]")
-        return
-    table = Table(show_header=True, header_style="bold magenta")
-    table.add_column("Timestamp", style="dim")
-    table.add_column("Value", justify="right")
-    for p in points[-20:]:
-        table.add_row(p.timestamp.strftime("%H:%M:%S"), f"{p.value:.4g}")
-    console.print(table)
-
-
-async def _anomaly(
-    service: str,
-    since: str,
-    severity: str | None,
-    resource_type: str | None,
-    json_out: bool,
-) -> None:
-    import json as json_mod
-
-    client = _get_client()
-    unit = since[-1]
-    val = int(since[:-1])
-    match unit:
-        case "m": window = val
-        case "h": window = val * 60
-        case "d": window = val * 1440
-        case _:
-            console.print("[red]Unknown time unit in --since. Use m/h/d.[/red]")
-            raise typer.Exit(1)
-
-    with console.status(f"[bold green]Detecting anomalies for {service}...[/bold green]"):
-        anomalies = await client.detect_anomalies(service, window_minutes=window)
-
-    if severity:
-        anomalies = [a for a in anomalies if a.severity.lower() == severity.lower()]
-
-    if json_out:
-        print(json_mod.dumps([a.to_dict() for a in anomalies], indent=2, default=str))
-        return
-
-    if not anomalies:
-        console.print(f"[dim]No anomalies detected for {service} in the last {since}.[/dim]")
-        return
-
-    table = Table(
-        show_header=True,
-        header_style="bold magenta",
-        title=f"Anomalies — {service} (last {since})",
-    )
-    table.add_column("#", width=3, justify="right")
-    table.add_column("Severity", width=9)
-    table.add_column("Metric", width=20)
-    table.add_column("Description")
-    table.add_column("Patterns", width=8, justify="right")
-    table.add_column("Traces", width=7, justify="right")
-
-    for i, a in enumerate(anomalies, 1):
-        sev_style = SEVERITY_COLORS.get(a.severity.lower(), "white")
-        n_patterns = len((a.log_summary or {}).get("unique_patterns") or [])
-        n_traces = len((a.log_summary or {}).get("stack_traces") or [])
-        table.add_row(
-            str(i),
-            f"[{sev_style}]{a.severity.upper()}[/{sev_style}]",
-            a.metric,
-            a.description[:80],
-            str(n_patterns) if n_patterns else "—",
-            str(n_traces) if n_traces else "—",
-        )
-
-    console.print(table)
-    console.print(
-        f"[dim]Run [bold]tinker monitor {service}[/bold] to explain and fix anomalies.[/dim]"
-    )
-
-
-async def _monitor_repl(service: str, since: str) -> None:
-    unit = since[-1]
-    val = int(since[:-1])
-    match unit:
-        case "m": window = val
-        case "h": window = val * 60
-        case "d": window = val * 1440
-        case _:
-            console.print("[red]Unknown time unit in --since. Use m/h/d.[/red]")
-            raise typer.Exit(1)
-
-    from tinker.interfaces.monitor_repl import MonitorREPL
-    client = _get_client()
-    repl = MonitorREPL(service=service, client=client, window_minutes=window)
-    await repl.run()
-
-
-async def _watch_start(service: str, channel: str | None, interval: int) -> None:
+async def _watch_start(service, notifier, destination, interval) -> None:
+    from tinker.interfaces.handlers import start_watch
     client = _get_client()
     with console.status(f"[bold green]Creating watch for {service}...[/bold green]"):
-        watch = await client.create_watch(
-            service=service,
-            slack_channel=channel,
-            interval_seconds=interval,
-        )
+        watch = await start_watch(client, service, notifier, destination, interval)
     watch_id = watch.get("watch_id", "?")
     console.print(
         f"[green]Watch started[/green]  [bold]{watch_id}[/bold]\n"
         f"  service=[cyan]{service}[/cyan]  "
-        f"channel={watch.get('slack_channel') or '—'}  "
+        f"notifier={watch.get('notifier') or 'default'}  "
         f"interval={interval}s\n"
         f"[dim]Stop with: tinker watch stop {watch_id}[/dim]"
     )
 
 
-async def _watch_list() -> None:
+async def _watch_list(output) -> None:
+    from tinker.interfaces.handlers import get_watches
+    from tinker.interfaces.renderers import render_watches
     client = _get_client()
-    watches = await client.list_watches()
-    if not watches:
-        console.print("[dim]No watches on the server.[/dim]")
-        return
-    table = Table(show_header=True, header_style="bold magenta", title="Server Watches")
-    table.add_column("ID", width=16)
-    table.add_column("Service", width=20)
-    table.add_column("Status", width=9)
-    table.add_column("Channel", width=16)
-    table.add_column("Interval", width=10)
-    table.add_column("Last Run")
-    for w in watches:
-        status = w.get("status", "?")
-        scolor = "green" if status == "running" else "dim"
-        table.add_row(
-            w["watch_id"],
-            w["service"],
-            f"[{scolor}]{status}[/{scolor}]",
-            w.get("slack_channel") or "—",
-            f"{w['interval_seconds']}s",
-            (w.get("last_run_at") or "never")[:19],
-        )
-    console.print(table)
+    watches = await get_watches(client)
+    render_watches(watches, output)
 
 
-async def _watch_stop(watch_id: str) -> None:
+async def _watch_stop(watch_id) -> None:
+    from tinker.interfaces.handlers import stop_watch
     client = _get_client()
-    try:
-        await client.stop_watch(watch_id)
-        console.print(f"[green]Watch {watch_id} stopped.[/green]")
-    except Exception as exc:
-        console.print(f"[red]Failed to stop watch: {exc}[/red]")
-        raise typer.Exit(1)
+    await stop_watch(client, watch_id)
+    console.print(f"[green]Watch {watch_id} stopped.[/green]")
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Version ───────────────────────────────────────────────────────────────────
 
+@app.command()
+def version() -> None:
+    """Print the Tinker version."""
+    console.print(f"tinker {__version__}")
 
 
 if __name__ == "__main__":
