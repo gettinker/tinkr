@@ -35,9 +35,10 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.syntax import Syntax
-from rich.table import Table
 
 from tinker.backends.base import Anomaly
+from tinker.interfaces.handlers import get_anomalies, parse_since
+from tinker.interfaces.renderers import OutputFormat, render_anomalies
 
 if TYPE_CHECKING:
     from tinker.client.remote import RemoteClient
@@ -51,7 +52,6 @@ SEVERITY_STYLE = {
     "medium": "yellow",
     "low": "green",
 }
-
 _HELP = textwrap.dedent("""
     list / ls              Re-display the anomaly table
     refresh / r            Re-fetch anomalies from the backend
@@ -76,10 +76,12 @@ class MonitorREPL:
         service: str,
         client: "RemoteClient",
         window_minutes: int = 60,
+        resource: str | None = None,
     ) -> None:
         self._service = service
         self._client = client
         self._window = window_minutes
+        self._resource = resource
 
         self._anomalies: list[Anomaly] = []
         self._filtered: list[Anomaly] = []
@@ -125,7 +127,7 @@ class MonitorREPL:
             elif cmd in ("help", "?"):
                 console.print(Panel(_HELP, title="Commands", border_style="dim"))
             elif cmd in ("list", "ls"):
-                self._print_table()
+                render_anomalies(self._filtered, OutputFormat.table, service=self._service, since=f"{self._window}m")
             elif cmd in ("refresh", "r"):
                 await self._do_refresh()
             elif cmd.startswith("filter"):
@@ -152,8 +154,10 @@ class MonitorREPL:
     async def _do_refresh(self) -> None:
         with console.status(f"[bold green]Fetching anomalies for {self._service}...[/bold green]"):
             try:
-                self._anomalies = await self._client.detect_anomalies(
-                    self._service, window_minutes=self._window
+                self._anomalies = await get_anomalies(
+                    self._client, self._service,
+                    since=f"{self._window}m",
+                    resource=self._resource,
                 )
             except Exception as exc:
                 import httpx
@@ -169,7 +173,7 @@ class MonitorREPL:
 
         self._apply_filter()
         self._persist_session()
-        self._print_table()
+        render_anomalies(self._filtered, OutputFormat.table, service=self._service, since=f"{self._window}m")
 
     def _do_filter(self, cmd: str) -> None:
         parts = cmd.split()
@@ -189,26 +193,16 @@ class MonitorREPL:
         if sev:
             self._severity_filter = sev
         if since:
-            # Parse window
             try:
-                unit = since[-1]
-                val = int(since[:-1])
-                match unit:
-                    case "m": self._window = val
-                    case "h": self._window = val * 60
-                    case "d": self._window = val * 1440
-                    case _:
-                        console.print("[red]Unknown time unit. Use m/h/d.[/red]")
-                        return
-                # Re-fetch with new window
-                asyncio.get_event_loop().run_until_complete(self._do_refresh())
+                _, self._window = parse_since(since)
+            except ValueError as exc:
+                console.print(f"[red]{exc}[/red]")
                 return
-            except (ValueError, IndexError):
-                console.print("[red]Invalid --since value.[/red]")
-                return
+            asyncio.get_event_loop().run_until_complete(self._do_refresh())
+            return
 
         self._apply_filter()
-        self._print_table()
+        render_anomalies(self._filtered, OutputFormat.table, service=self._service, since=f"{self._window}m")
 
     def _apply_filter(self) -> None:
         if self._severity_filter:
@@ -218,48 +212,6 @@ class MonitorREPL:
             ]
         else:
             self._filtered = list(self._anomalies)
-
-    def _print_table(self) -> None:
-        if not self._filtered:
-            if self._severity_filter:
-                console.print(
-                    f"[dim]No {self._severity_filter} anomalies in the last {self._window}m.[/dim]"
-                )
-            else:
-                console.print(
-                    f"[dim]No anomalies detected in the last {self._window}m.[/dim]"
-                )
-            return
-
-        table = Table(
-            show_header=True,
-            header_style="bold magenta",
-            title=f"Anomalies — {self._service} (last {self._window}m)",
-        )
-        table.add_column("#", width=3, justify="right")
-        table.add_column("Severity", width=9)
-        table.add_column("Metric", width=20)
-        table.add_column("Description")
-        table.add_column("Patterns", width=8, justify="right")
-        table.add_column("Traces", width=7, justify="right")
-
-        for i, a in enumerate(self._filtered, 1):
-            sev_style = SEVERITY_STYLE.get(a.severity.lower(), "white")
-            n_patterns = len((a.log_summary or {}).get("unique_patterns") or [])
-            n_traces = len((a.log_summary or {}).get("stack_traces") or [])
-            table.add_row(
-                str(i),
-                f"[{sev_style}]{a.severity.upper()}[/{sev_style}]",
-                a.metric,
-                a.description[:80],
-                str(n_patterns) if n_patterns else "—",
-                str(n_traces) if n_traces else "—",
-            )
-
-        console.print(table)
-        console.print(
-            "[dim]Commands: explain <n> · fix <n> · filter --severity high · refresh[/dim]"
-        )
 
     async def _do_explain(self, cmd: str) -> None:
         idx = _parse_index(cmd, "explain")
