@@ -383,8 +383,8 @@ def _run_agent_loop(
 
         if llm_mod.is_tool_call(response):
             messages.append(llm_mod.assistant_message_from_response(response))
-            for tc in llm_mod.extract_tool_calls(response):
-                name, args = tc["name"], tc["arguments"]
+            for tool_call in llm_mod.extract_tool_calls(response):
+                name, args = tool_call["name"], tool_call["arguments"]
                 log.debug("fix.tool_call", turn=turn, tool=name, path=args.get("path", ""))
 
                 if name == "propose_fix":
@@ -393,7 +393,7 @@ def _run_agent_loop(
                 else:
                     result_str = _dispatch_read_tool(name, args, gh)
 
-                messages.append(llm_mod.tool_result_message(tc["id"], result_str))
+                messages.append(llm_mod.tool_result_message(tool_call["id"], result_str))
 
             if staged:
                 break

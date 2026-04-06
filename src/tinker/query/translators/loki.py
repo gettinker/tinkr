@@ -62,7 +62,24 @@ def _collect(node: QueryNode, acc: _LogQL, negated: bool = False) -> None:
     elif isinstance(node, FieldFilter):
         fname = node.field
         if fname in _LABEL_FIELDS:
-            if len(node.values) == 1:
+            # Level labels may be stored in any case (ERROR, error, Error).
+            # Use a case-insensitive regexp so the query works regardless.
+            if fname == "level":
+                if len(node.values) == 1:
+                    v = node.values[0].upper()
+                    pattern = f"(?i){v}"
+                    if negated:
+                        acc.label_regexps[fname] = f"^(?!(?i:{v})$).*"
+                    else:
+                        acc.label_regexps[fname] = pattern
+                else:
+                    pattern = "|".join(v.upper() for v in node.values)
+                    ci_pattern = f"(?i)({pattern})"
+                    if negated:
+                        acc.label_regexps[fname] = f"^(?!(?i:{pattern})$).*"
+                    else:
+                        acc.label_regexps[fname] = ci_pattern
+            elif len(node.values) == 1:
                 if negated:
                     acc.label_regexps[fname] = f"^(?!{node.values[0]}$).*"
                 else:
