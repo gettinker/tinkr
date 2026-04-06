@@ -723,6 +723,8 @@ class ServerWizard:
             "[dim]Store it somewhere safe — it won't be shown again.[/dim]",
             border_style="yellow",
         ))
+        input("Press Enter once you have copied the key...")
+        console.print()
 
     def _write_env(self) -> None:
         """Write secrets-only .env file."""
