@@ -338,30 +338,19 @@ class InvestigateREPL:
         anomaly_dict = _group_to_anomaly_dict(group, self._service)
 
         chunks: list[str] = []
-        with console.status("[bold green]Classifying error...[/bold green]"):
-            # Kick off streaming — classification label will come in the first tokens
-            pass
-
-        async for chunk in self._client.stream_explain(anomaly_dict):
-            # Print the first chunk which typically contains the classification
-            console.print(chunk, end="", highlight=False)
-            chunks.append(chunk)
-        console.print()
+        with console.status("[bold green]Generating explanation...[/bold green]"):
+            async for chunk in self._client.stream_explain(anomaly_dict):
+                chunks.append(chunk)
 
         full_text = "".join(chunks)
-        # Extract classification if the server embedded it
         error_class = _extract_class(full_text)
-        if error_class:
-            style = _CLASS_STYLE.get(error_class, "dim")
-            console.print(
-                f"[dim]Classification:[/dim] [{style}]{error_class}[/{style}]"
-            )
+        border = _CLASS_STYLE.get(error_class or "", "cyan")
 
         console.print(
             Panel(
                 Markdown(full_text),
                 title=f"[bold]Explanation — {group.template[:60]}[/bold]",
-                border_style=_CLASS_STYLE.get(error_class or "", "cyan"),
+                border_style=border,
             )
         )
 
