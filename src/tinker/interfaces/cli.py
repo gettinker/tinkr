@@ -347,38 +347,42 @@ async def _anomaly(service, since, severity, resource, output) -> None:
     render_anomalies(anomalies, output, service=service, since=since)
 
 
-# ── Monitor REPL ──────────────────────────────────────────────────────────────
+# ── Investigate REPL ─────────────────────────────────────────────────────────
 
 @app.command()
-def monitor(
+def investigate(
     service: str = typer.Argument(..., help="Service name"),
-    since: str = typer.Option("1h", "--since", "-s", help="Initial look-back window"),
-    resource: Optional[str] = typer.Option(None, "--resource", "-r"),
+    since: str = typer.Option("30m", "--since", "-s", help="Look-back window (e.g. 30m, 2h, 1d)"),
+    level: str = typer.Option("ERROR", "--level", "-l", help="Log level to group: ERROR, WARN, or ALL"),
+    resource: Optional[str] = typer.Option(None, "--resource", "-r", help="Resource type (ecs, lambda, eks…)"),
 ) -> None:
-    """[bold cyan]Open interactive anomaly monitor REPL.[/bold cyan]
+    """[bold cyan]Investigate errors interactively — group, explain, fix, PR.[/bold cyan]
 
-    Subcommands inside the REPL:
+    Opens a two-level REPL session. Logs are fetched, deduplicated into error
+    groups, and displayed. LLM is only invoked when you explicitly type
+    [bold]explain[/bold] or [bold]fix[/bold].
 
-      explain <n>   — LLM explains the anomaly
-      fix <n>       — LLM proposes a code fix
-      approve       — Apply fix and open a GitHub PR
-      refresh       — Re-fetch anomalies
-      help          — Show all commands
+    Level 1 — error groups table (pattern + count + stack trace count)
+    Level 2 — drill into a group with [bold]logs <n>[/bold] to see individual entries
 
     Examples:
 
-      tinker monitor payments-api
-      tinker monitor payments-api --since 2h
+      tinker investigate payments-api
+      tinker investigate payments-api --since 2h
+      tinker investigate payments-api --level WARN
     """
-    _run(_monitor_repl(service, since, resource))
+    _run(_investigate_repl(service, since, level, resource))
 
 
-async def _monitor_repl(service: str, since: str, resource: str | None) -> None:
+async def _investigate_repl(service: str, since: str, level: str, resource: str | None) -> None:
     from tinker.interfaces.handlers import parse_since
-    from tinker.interfaces.monitor_repl import MonitorREPL
+    from tinker.interfaces.investigate_repl import InvestigateREPL
     _, window = parse_since(since)
     client = _get_client()
-    await MonitorREPL(service=service, client=client, window_minutes=window, resource=resource).run()
+    await InvestigateREPL(
+        service=service, client=client,
+        window_minutes=window, level=level, resource=resource,
+    ).run()
 
 
 # ── Watch commands ────────────────────────────────────────────────────────────

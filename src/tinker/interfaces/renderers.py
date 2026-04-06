@@ -179,7 +179,7 @@ def render_anomalies(
     console.print(table)
     if service:
         console.print(
-            f"[dim]Run [bold]tinker monitor {service}[/bold] to explain and fix anomalies.[/dim]"
+            f"[dim]Run [bold]tinker investigate {service}[/bold] to explain and fix anomalies.[/dim]"
         )
 
 

@@ -152,61 +152,88 @@ Output shows severity, metric name, description, number of unique error patterns
 
 ---
 
-### Interactive monitor — `tinker monitor`
+### Interactive investigation — `tinker investigate`
 
-Opens a REPL session. Anomaly table is displayed immediately. LLM is only invoked when you explicitly type `explain` or `fix`.
+Log-driven end-to-end debugging: fetch errors → group by pattern → explain → fix → PR. LLM is only invoked when you explicitly type `explain` or `fix`.
 
 ```bash
-tinker monitor payments-api
-tinker monitor payments-api --since 2h
+tinker investigate payments-api
+tinker investigate payments-api --since 2h
+tinker investigate payments-api --level WARN
 ```
 
+**Level 1 — error groups:**
+
 ```
-┌─ Tinker Monitor  payments-api  window: 60m ──────────────────────┐
+ Error Groups — payments-api (last 30m, level=ERROR)
+ #   Level   Count   Pattern                                      Traces   First seen
+ 1   ERROR     847   DB connection timeout to <ip>:<n> after <n>     3     11:02:15
+ 2   ERROR      12   NullPointerException in PaymentService           1     11:15:43
+ 3   ERROR     234   HTTP 503 from inventory-service                  0     11:01:00
 
- Anomalies — payments-api (last 60m)
- #   Severity   Metric          Description                 Patterns  Traces
- 1   HIGH       error_count     847 errors in 10m           2         1
- 2   MEDIUM     latency_p99     2.4s avg, threshold 1s      —         —
-
-Commands: explain <n> · fix <n> · filter --severity high · refresh
-
-[payments-api] >
+Commands: logs <n> · explain <n> · fix <n> · filter --since 30m · refresh
 ```
 
-#### REPL subcommands
+**Level 2 — drill into a group (`logs 1`):**
+
+```
+ Log entries (group #1 · 847 occurrences)
+ #   Time       Level   Message
+ 1   11:02:15   ERROR   DB connection timeout to 10.0.0.3:5432 after 30s
+ 2   11:02:17   ERROR   DB connection timeout to 10.0.0.7:5432 after 30s
+ ...
+
+Commands: explain · fix · back
+```
+
+#### REPL commands
 
 | Command | LLM? | Description |
 |---|---|---|
-| `list` / `ls` | — | Re-display the anomaly table |
-| `refresh` / `r` | — | Re-fetch anomalies |
-| `filter --severity high` | — | Show only anomalies of given severity |
-| `filter --since 30m` | — | Change the look-back window and re-fetch |
-| `explain <n>` | ✓ | LLM explanation of anomaly #n |
-| `fix <n>` | ✓ | LLM-proposed code fix using repo tools |
+| `list` / `ls` | — | Re-display current view (groups or entries) |
+| `refresh` / `r` | — | Re-fetch logs and regroup |
+| `filter --since 30m` | — | Change look-back window and re-fetch |
+| `filter --level WARN` | — | Switch level filter (ERROR / WARN / ALL) |
+| `logs <n>` | — | Drill into group #n — show individual entries + stack traces |
+| `back` / `b` | — | Return to groups view |
+| `explain <n>` | ✓ | AI explains group #n — shows error classification first |
+| `fix <n>` | ✓ | AI proposes code fix (skipped for transient errors) |
 | `approve` | — | Apply the pending fix and open a GitHub PR |
 | `session clean` | — | Delete sessions older than 24 h |
 | `help` / `?` | — | Show command reference |
 | `quit` / `q` | — | Exit |
 
+#### Error classification
+
+`explain` shows the classification before the AI narrative:
+
+```
+Classification: logic_bug
+
+Root cause: NullPointerException occurs in PaymentService.processRefund()
+when order.getCustomer() returns null for guest checkouts...
+```
+
+Types: `transient` · `logic_bug` · `config_error` · `dependency_down`
+
+For `transient` errors, `fix` prints an analysis without generating a code patch.
+
 #### LLM cost control
 
 `explain` sends a compact summary (~300–1000 tokens) regardless of how many raw errors occurred:
 
-- **Template normalisation** — variable parts (IPs, timestamps, UUIDs, numbers) are replaced with placeholders, so `timeout to 10.0.0.3:5432` and `timeout to 10.0.0.7:5432` collapse to one pattern
-- **Stack trace extraction** — Python/Java/Node/Go/Ruby traces are detected, deduplicated by normalised signature, and trimmed to 10 lines
-- **Deduplication** — identical patterns are counted, not repeated
+- **Template normalisation** — variable parts (IPs, timestamps, UUIDs, numbers) are replaced with placeholders so `timeout to 10.0.0.3:5432` and `timeout to 10.0.0.7:5432` collapse to one pattern
+- **Stack trace deduplication** — Python/Java/Node/Go/Ruby traces are detected, deduplicated by signature, trimmed to 30 lines
+- **Representative sampling** — one example log per unique pattern, preferring entries that contain a stack trace
 
-Example: 1000 raw error logs → 2 unique patterns + 1 stack trace → 1084-char LLM context.
+Example: 1000 raw error logs → 2 unique patterns + 1 stack trace → ~1000-token LLM context.
 
 #### `fix` requirements
 
-`fix <n>` searches your codebase using: `glob_files`, `get_file`, `search_code`, `get_recent_commits`, `suggest_fix`.
-
 | Setting | How to configure |
 |---|---|
-| Repo path | Set `TINKER_REPO_PATH` in `.env`, or auto-detected from current git repo |
-| GitHub PR | `GITHUB_TOKEN` + `GITHUB_REPO` required for `approve` |
+| GitHub repo | Configure in `[profiles.*].services.<name>.repo` or `[github].default_repo` |
+| GitHub token | `GITHUB_TOKEN` in `~/.tinker/.env` |
 
 ---
 
@@ -760,7 +787,7 @@ tinker init cli    # URL: http://localhost:8000
 # 4. Generate traffic and query
 cd local-dev && ./generate_traffic.sh incident
 tinker anomaly payments-api --since 5m
-tinker monitor payments-api
+tinker investigate payments-api
 ```
 
 ---
@@ -793,7 +820,7 @@ All per-user state lives in `~/.tinker/`:
 | `~/.tinker/config.toml` | `tinker init server` | `tinker server` (structure + routing) |
 | `~/.tinker/.env` | `tinker init server` | `tinker server` (secrets) |
 | `~/.tinker/config` | `tinker init cli` | all CLI commands |
-| `~/.tinker/tinker.db` | auto-created | `tinker monitor`, `tinker watch` |
+| `~/.tinker/tinker.db` | auto-created | `tinker investigate`, `tinker watch` |
 
 ---
 
