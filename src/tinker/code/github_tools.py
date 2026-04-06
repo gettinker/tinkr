@@ -14,6 +14,18 @@ import structlog
 log = structlog.get_logger(__name__)
 
 
+def _normalise_repo(repo: str) -> str:
+    """Accept owner/repo or a full GitHub URL — always return owner/repo."""
+    repo = repo.strip().rstrip("/")
+    if repo.startswith("https://github.com/"):
+        repo = repo[len("https://github.com/"):]
+    elif repo.startswith("http://github.com/"):
+        repo = repo[len("http://github.com/"):]
+    elif repo.startswith("git@github.com:"):
+        repo = repo[len("git@github.com:"):].removesuffix(".git")
+    return repo
+
+
 class GitHubCodeProvider:
     """Wraps PyGitHub — all repo operations go through here.
 
@@ -46,10 +58,12 @@ class GitHubCodeProvider:
 
         if not repo_name:
             raise RuntimeError(
-                "No GitHub repository configured for this service. "
-                "Set GITHUB_REPO (single repo) or GITHUB_REPOS (service map) "
-                "in ~/.tinker/.env or run `tinker init server`."
+                "No GitHub repository configured. "
+                "Set github.default_repo = \"owner/repo\" in config.toml [github]."
             )
+
+        # Accept full GitHub URLs — strip to owner/repo
+        repo_name = _normalise_repo(repo_name)
 
         self._repo = self._gh.get_repo(repo_name)
         log.info("github.provider_ready", repo=repo_name, service=service)
