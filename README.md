@@ -18,7 +18,7 @@ Open-source AI-powered observability and incident response agent. Connects to yo
 │  GET  /mcp/sse           Remote MCP for Claude Code              │
 │  POST /slack/events      Slack bot                               │
 │                                                                  │
-│  TINKER_BACKEND=cloudwatch|gcp|azure|grafana|datadog|elastic     │
+│  Active profile → backend (cloudwatch|gcp|azure|grafana|…)      │
 │  Credentials → IAM role / Workload Identity / Managed Identity   │
 │  Zero long-lived cloud keys on the server.                       │
 └──────────────────┬───────────────────────────────────────────────┘
@@ -62,13 +62,19 @@ Requires Python 3.12+.
 ```bash
 # 1. Run the setup wizard
 tinker init server
-#   Auto-detects cloud, checks IAM permissions, configures Slack/notifiers,
-#   generates API key. Writes: ~/.tinker/config.toml + ~/.tinker/.env
+#   Wizard order:
+#   Step 1 — LLM provider + model + API key
+#   Step 2 — Slack bot (optional)
+#   Step 3 — GitHub integration (fix + approve)
+#   Step 4 — Server API key (for CLI auth)
+#   Step 5 — Profiles: cloud backend + services + notifiers (loops for multi-cloud)
+#
+#   Writes: ~/.tinker/config.toml  (structure)
+#           ~/.tinker/.env         (secrets)
 
-# 2. Start the server (picks up ~/.tinker/.env automatically)
+# 2. Start the server
 tinker server
 # Listening on http://0.0.0.0:8000
-# Docs: http://0.0.0.0:8000/docs
 ```
 
 ### On each developer's machine
@@ -79,7 +85,7 @@ tinker init cli
 # Tinker server URL [http://localhost:8000]: https://tinker.acme.internal
 # API token: <paste key from step 1>
 # ✓ Connected: Tinker v0.1.0  backend=cloudwatch
-# ✓ Saved: ~/.tinker/config   (URL + token stored here)
+# ✓ Saved: ~/.tinker/config
 
 # 4. Verify
 tinker doctor
@@ -89,21 +95,45 @@ tinker doctor
 
 ## Commands
 
-All commands take a **service name** as the first argument — the service name in your observability backend (ECS service, Cloud Run service, Loki `service` label, etc.).
+All observability commands take a **service name** as the first argument — the service name in your observability backend (ECS service, Cloud Run service, Loki `service` label, etc.).
 
 ### Server management
 
 ```bash
 tinker server                        # start on :8000
 tinker server --port 9000            # custom port
-tinker server --host 127.0.0.1      # bind to localhost only
+tinker server --host 127.0.0.1       # bind to localhost only
 tinker server --reload               # dev mode — hot reload
 
-tinker init server                   # setup wizard for the server machine
+tinker init server                   # first-time setup wizard
 tinker init cli                      # connect CLI to a running server
 
 tinker doctor                        # verify server connection and backend
 ```
+
+---
+
+### Profile management — `tinker profile`
+
+A **profile** bundles a cloud backend with its services and alert notifiers. Use one profile per cloud account. The active profile is what the server uses.
+
+```bash
+tinker profile list                  # show all profiles + which is active
+tinker profile use aws-prod          # switch active profile
+tinker profile add                   # add a new profile interactively
+```
+
+```
+ Profiles
+   Name          Backend       Services   Notifiers
+ ● aws-prod      cloudwatch       3           2
+ ○ aws-staging   cloudwatch       1           1
+ ○ local-dev     grafana          2           1
+
+Active: aws-prod — change with tinker profile use <name>
+```
+
+`tinker profile use` updates `active_profile` in `~/.tinker/config.toml` immediately. The server picks it up on the next restart (or `tinker server --reload`).
 
 ---
 
@@ -115,7 +145,7 @@ Fast anomaly check with no LLM cost. Returns a table directly.
 tinker anomaly payments-api                    # last 1h
 tinker anomaly payments-api --since 2h         # custom window
 tinker anomaly payments-api --severity high    # filter by severity
-tinker anomaly payments-api --json             # machine-readable
+tinker anomaly payments-api --output json      # machine-readable
 ```
 
 Output shows severity, metric name, description, number of unique error patterns, and distinct stack traces detected in the error logs.
@@ -185,11 +215,11 @@ Example: 1000 raw error logs → 2 unique patterns + 1 stack trace → 1084-char
 Watches run as asyncio tasks inside the server process. The server polls for anomalies on a schedule and dispatches alerts via the configured notifier when the anomaly set changes.
 
 ```bash
-# Start a watch — uses the "default" notifier from config.toml
+# Start a watch — uses the "default" notifier from the active profile
 tinker watch start payments-api
 tinker watch start payments-api --interval 120
 
-# Route alerts to a specific notifier defined in [notifiers.*]
+# Route alerts to a specific notifier
 tinker watch start payments-api --notifier discord-ops
 tinker watch start payments-api --notifier slack-main --destination "#payments-oncall"
 
@@ -211,7 +241,7 @@ tinker watch stop watch-abc123
 1. `tinker watch start` calls `POST /api/v1/watches` on the server
 2. The server starts an asyncio task that polls `detect_anomalies` every `interval` seconds
 3. A SHA-256 hash of the current anomaly set is compared to the previous tick — the notifier is only called when the set changes
-4. Watch state is persisted in the server's SQLite DB (`~/.tinker/tinker.db`) and resumed on server restart
+4. Watch state is persisted in SQLite (`~/.tinker/tinker.db`) and resumed on server restart
 5. `tinker watch stop` calls `DELETE /api/v1/watches/{id}`, cancelling the asyncio task
 
 **Alert message format (Slack):**
@@ -222,7 +252,7 @@ tinker watch stop watch-abc123
 • *MEDIUM* `latency_p99` — 2.4s avg (threshold: 1s)
 ```
 
-Notifiers are configured in `~/.tinker/config.toml` — see [Notifiers](#notifiers) below.
+Notifiers are configured per profile — see [Profiles and notifiers](#profiles-and-notifiers) below.
 
 ---
 
@@ -264,7 +294,7 @@ Field aliases: `severity` → `level`, `svc`/`app` → `service`, `msg` → `mes
 
 ### Targeting infrastructure resources
 
-Use `--resource TYPE` (or `-r TYPE`) to route queries to a specific log group / resource type. Without it each backend uses its default.
+Use `--resource TYPE` (or `-r TYPE`) to route queries to a specific log group / resource type.
 
 ```bash
 tinker logs payments-api --resource ecs -q 'level:ERROR'
@@ -286,7 +316,7 @@ Cross-cloud aliases work — `--resource lambda` on GCP maps to `cloud_function`
 
 ## Supported backends
 
-| Backend | `TINKER_BACKEND` | Logs | Metrics | Auth |
+| Backend | `backend` value | Logs | Metrics | Auth |
 |---|---|---|---|---|
 | AWS CloudWatch | `cloudwatch` | Logs Insights | CloudWatch Metrics | IAM Task Role |
 | GCP | `gcp` | Cloud Logging | Cloud Monitoring | Workload Identity |
@@ -299,20 +329,22 @@ Cross-cloud aliases work — `--resource lambda` on GCP maps to `cloud_function`
 
 ## Supported LLM providers
 
-Uses [LiteLLM](https://github.com/BerriAI/litellm) — swap providers by changing one env var.
+Uses [LiteLLM](https://github.com/BerriAI/litellm) — swap providers by changing one config value.
 
-| Provider | `TINKER_DEFAULT_MODEL` | Key variable |
+| Provider | `default_model` | Key variable |
 |---|---|---|
 | Anthropic | `anthropic/claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
 | OpenRouter | `openrouter/anthropic/claude-sonnet-4-6` | `OPENROUTER_API_KEY` |
 | OpenAI | `openai/gpt-4o` | `OPENAI_API_KEY` |
 | Groq | `groq/llama-3.1-70b-versatile` | `GROQ_API_KEY` |
 
+Set via `[llm]` in `config.toml` (wizard sets this in Step 1).
+
 ---
 
 ## Deployment
 
-The simplest deployment is `pip install tinker-agent && tinker server` on any machine that has cloud access — an EC2 instance with an IAM role, a Cloud Run instance with a Workload Identity, a VM with Managed Identity, or your own laptop.
+The simplest deployment is `pip install tinker-agent && tinker server` on any machine that has cloud access — an EC2 instance with an IAM role, a Cloud Run instance with a Workload Identity, or your laptop.
 
 ### AWS (EC2 / ECS)
 
@@ -322,12 +354,6 @@ The simplest deployment is `pip install tinker-agent && tinker server` on any ma
 pip install tinker-agent
 tinker init server      # detects AWS automatically, verifies CloudWatch access
 tinker server           # or: nohup tinker server &
-
-# Or run as a systemd service:
-# [Unit] Description=Tinker Server
-# [Service] ExecStart=tinker server
-#           EnvironmentFile=/etc/tinker/.env
-# [Install] WantedBy=multi-user.target
 ```
 
 **Required IAM permissions:**
@@ -348,21 +374,21 @@ tinker server           # or: nohup tinker server &
 ### GCP (Cloud Run / GCE)
 
 ```bash
-# Deploy as Cloud Run service with a service account bound to:
-#   roles/logging.viewer  +  roles/monitoring.viewer
 gcloud run deploy tinker \
   --image gcr.io/your-project/tinker-agent \
   --service-account tinker@your-project.iam.gserviceaccount.com \
   --set-env-vars TINKER_BACKEND=gcp,GCP_PROJECT_ID=your-project
 ```
 
+Required roles: `roles/logging.viewer` + `roles/monitoring.viewer`
+
 ### Azure (Container Apps / VM)
 
 ```bash
-# Enable system-assigned managed identity, then assign:
-#   Monitoring Reader  +  Log Analytics Reader
 az role assignment create --assignee <MANAGED_IDENTITY_PRINCIPAL_ID> \
   --role "Monitoring Reader" --scope /subscriptions/SUBSCRIPTION_ID
+az role assignment create --assignee <MANAGED_IDENTITY_PRINCIPAL_ID> \
+  --role "Log Analytics Reader" --scope /subscriptions/SUBSCRIPTION_ID
 ```
 
 ### Self-hosted / Docker
@@ -379,11 +405,8 @@ docker compose -f deploy/docker-compose.yml up -d
 # Generate (tinker init server does this automatically)
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 
-# Hash it — store the hash in TINKER_API_KEYS, give the raw key to CLI users
+# Hash it — store the hash in config.toml [auth], give the raw key to CLI users
 python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" <raw-key>
-
-# TINKER_API_KEYS format in .env:
-TINKER_API_KEYS='[{"hash":"<sha256>","subject":"alice","roles":["oncall"]}]'
 ```
 
 ---
@@ -414,91 +437,130 @@ The `fix` and `approve` commands require a GitHub token so the server can read y
 
 ### 1. Create a token
 
-Go to **GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens** (recommended) or classic tokens.
+Go to **GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens**.
 
-Required scopes:
-- **Contents** — read (to fetch files, search code)
-- **Commits** — read (for `get_commits`)
-- **Pull requests** — write (to open fix PRs)
-- **Metadata** — read (always required)
-
-```bash
-# Classic PAT — minimum scopes: repo (full)
-# Fine-grained PAT — scopes listed above, scoped to specific repos
-```
+Required scopes: `Contents` read, `Commits` read, `Pull requests` write, `Metadata` read.
 
 ### 2. Add to server config
 
-`tinker init server` asks for this interactively. For manual setup, add to `~/.tinker/.env`:
+`tinker init server` asks for this interactively (Step 3). For manual setup:
 
 ```bash
+# ~/.tinker/.env
 GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
-
-# Single repo (simplest)
-GITHUB_REPO=your-org/your-repo
-
-# Multiple repos — map each service to its repo
-# The server picks the right repo from the service name in the anomaly
-GITHUB_REPOS='{"payments-api":"acme/payments","auth-service":"acme/auth","orders-api":"acme/orders"}'
 ```
 
-If a service isn't in `GITHUB_REPOS`, the server falls back to `GITHUB_REPO`. If neither is set, `fix` returns a 422 with a clear error message.
+```toml
+# ~/.tinker/config.toml
+[github]
+token = "env:GITHUB_TOKEN"
+default_repo = "acme/monorepo"
+```
+
+Per-service repos are configured inside each profile (wizard Step 5, or by editing `config.toml`):
+
+```toml
+[profiles.aws-prod.services.payments-api]
+repo = "acme/payments"
+
+[profiles.aws-prod.services.auth-service]
+repo = "acme/auth"
+```
 
 ### Bitbucket / GitLab
 
-Bitbucket and GitLab provider support is not yet built in. As a workaround:
-- Mirror your repos to GitHub and point `GITHUB_REPO` there, **or**
-- Use a GitHub Actions / GitLab CI bridge that syncs on push
-
-Native Bitbucket and GitLab providers are planned — contributions welcome.
+Native support is not yet built in. Workaround: mirror repos to GitHub and point `default_repo` there.
 
 ---
 
-## Notifiers
+## Profiles and notifiers
 
-Notifiers control where watch alerts are sent. Configure them in `~/.tinker/config.toml` under `[notifiers.*]` — each key is a name you reference when starting a watch.
+### Profiles
 
-`tinker init server` creates the `[notifiers.default]` entry automatically when you configure Slack.
-
-### Slack
+A profile bundles a backend with its services and notifiers. Use one per cloud account.
 
 ```toml
-[notifiers.default]
-type = "slack"
-bot_token = "env:SLACK_BOT_TOKEN"
-channel = "#incidents"
+# ~/.tinker/config.toml
 
-[notifiers.payments-team]
-type = "slack"
-bot_token = "env:SLACK_BOT_TOKEN"   # same token, different channel
-channel = "#payments-oncall"
+active_profile = "aws-prod"   # which profile is currently active
+
+[profiles.aws-prod]
+backend = "cloudwatch"
+region  = "us-east-1"
+
+  [profiles.aws-prod.services.payments-api]
+  repo          = "acme/payments"
+  resource_type = "ecs"
+
+  [profiles.aws-prod.services.auth-service]
+  resource_type = "lambda"
+
+  [profiles.aws-prod.notifiers.default]
+  type    = "slack"
+  bot_token = "env:SLACK_BOT_TOKEN"
+  channel = "#prod-incidents"
+
+[profiles.aws-staging]
+backend = "cloudwatch"
+region  = "eu-west-1"
+
+  [profiles.aws-staging.notifiers.default]
+  type    = "slack"
+  bot_token = "env:SLACK_BOT_TOKEN"
+  channel = "#staging-alerts"
+
+[profiles.local-dev]
+backend          = "grafana"
+loki_url         = "http://localhost:3100"
+prometheus_url   = "http://localhost:9090"
+api_key          = "env:GRAFANA_API_KEY"
 ```
 
-### Discord
+**Profile commands:**
 
+```bash
+tinker profile list              # show profiles + active marker
+tinker profile use aws-staging   # switch active profile (updates config.toml)
+tinker profile add               # wizard to add a new profile
+```
+
+### Notifiers
+
+Notifiers live inside their profile. Notifier type options:
+
+**Slack:**
 ```toml
-[notifiers.discord-ops]
-type = "discord"
+[profiles.aws-prod.notifiers.default]
+type      = "slack"
+bot_token = "env:SLACK_BOT_TOKEN"
+channel   = "#incidents"
+
+[profiles.aws-prod.notifiers.payments-team]
+type      = "slack"
+bot_token = "env:SLACK_BOT_TOKEN"
+channel   = "#payments-oncall"
+```
+
+**Discord:**
+```toml
+[profiles.aws-prod.notifiers.discord-ops]
+type        = "discord"
 webhook_url = "env:DISCORD_OPS_WEBHOOK_URL"
 ```
-
-Create a webhook under **Server Settings → Integrations → Webhooks** in Discord. Add the URL to `~/.tinker/.env`:
 
 ```bash
 DISCORD_OPS_WEBHOOK_URL=https://discord.com/api/webhooks/...
 ```
 
-### Generic webhook (PagerDuty, custom receivers, etc.)
-
+**Generic webhook (PagerDuty, custom receivers, etc.):**
 ```toml
-[notifiers.pagerduty]
-type = "webhook"
-url = "env:PAGERDUTY_WEBHOOK_URL"
+[profiles.aws-prod.notifiers.pagerduty]
+type                 = "webhook"
+url                  = "env:PAGERDUTY_WEBHOOK_URL"
 header_Authorization = "env:PAGERDUTY_API_KEY"
 ```
 
-The payload is:
-
+Webhook payload:
 ```json
 {
   "watch_id": "watch-a3f2b1c4",
@@ -510,28 +572,11 @@ The payload is:
 }
 ```
 
-### Using notifiers in watches
-
+**Using notifiers in watches:**
 ```bash
-# Default notifier
-tinker watch start payments-api
-
-# Named notifier
-tinker watch start payments-api --notifier discord-ops
-
-# Named notifier + override destination (Slack only)
+tinker watch start payments-api                                      # uses "default"
+tinker watch start payments-api --notifier discord-ops               # named notifier
 tinker watch start payments-api --notifier default --destination "#payments-oncall"
-```
-
-Or via API:
-
-```json
-POST /api/v1/watches
-{
-  "service": "payments-api",
-  "notifier": "discord-ops",
-  "interval_seconds": 60
-}
 ```
 
 ---
@@ -541,109 +586,107 @@ POST /api/v1/watches
 ### 1. Create a Slack app
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
-2. Under **OAuth & Permissions** → **Bot Token Scopes**, add:
-   - `chat:write` — post messages
-   - `channels:read` — resolve channel names
-   - `commands` — receive slash commands
-3. Under **Slash Commands**, create:
-   - `/tinker-monitor` — `Analyze a service`
-   - `/tinker-approve` — `Approve a pending fix`
-   - `/tinker-status` — `Show server status`
+2. Under **OAuth & Permissions** → **Bot Token Scopes**, add: `chat:write`, `channels:read`, `commands`
+3. Under **Slash Commands**, create: `/tinker-logs`, `/tinker-anomaly`, `/tinker-analyze`, `/tinker-fix`, `/tinker-approve`, `/tinker-watch`, `/tinker-status`, `/tinker-help`
 4. Under **Event Subscriptions** → enable, set Request URL to `https://tinker.your-company.internal/slack/events`
 5. **Install to workspace** → copy the **Bot User OAuth Token** (`xoxb-...`)
 6. Copy the **Signing Secret** from **Basic Information**
 
 ### 2. Add to server config
 
-`tinker init server` asks for these interactively. For manual setup, add to `~/.tinker/.env`:
+`tinker init server` asks for these interactively (Step 2). For manual setup:
 
 ```bash
+# ~/.tinker/.env
 SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx
 SLACK_SIGNING_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-SLACK_ALERTS_CHANNEL=#incidents    # default channel for watch alerts
+```
+
+```toml
+# ~/.tinker/config.toml
+[slack]
+bot_token      = "env:SLACK_BOT_TOKEN"
+alerts_channel = "#incidents"
 ```
 
 ### 3. Usage
 
 ```
-/tinker-monitor payments-api since=2h    # open monitor session
-/tinker-approve INC-abc123               # approve a fix (requires oncall role)
-/tinker-status                           # show connected backend + version
-```
-
-Watch alerts are posted automatically when `tinker watch start <service>` detects a new anomaly.
-
-To give a Slack user the `oncall` role, include it in the API key entry they use:
-```bash
-TINKER_API_KEYS='[{"hash":"<sha256>","subject":"alice","roles":["oncall"]}]'
+/tinker-logs payments-api since=30m q=level:ERROR
+/tinker-anomaly payments-api since=1h severity=high
+/tinker-analyze payments-api since=2h
+/tinker-watch start payments-api interval=120
+/tinker-watch list
+/tinker-watch stop watch-abc123
+/tinker-approve INC-abc123
+/tinker-status
+/tinker-help
 ```
 
 ---
 
 ## Configuration reference
 
-`tinker init server` writes all of this automatically. For manual setup, edit the two files it creates:
+`tinker init server` writes all of this automatically.
 
 | File | Purpose |
 |---|---|
-| `~/.tinker/config.toml` | Structure — backends, notifiers, services, server settings, auth |
+| `~/.tinker/config.toml` | Structure — profiles, LLM, Slack, GitHub, auth, server settings |
 | `~/.tinker/.env` | Secrets — API keys, tokens. Never commit this file |
 
 Secrets are referenced in `config.toml` as `"env:VAR_NAME"` and resolved at server startup.
 
-### `~/.tinker/config.toml` structure
+### Full `~/.tinker/config.toml` structure
 
 ```toml
+# Which profile the server uses
+active_profile = "aws-prod"
+
 [server]
-host = "0.0.0.0"
-port = 8000
+host      = "0.0.0.0"
+port      = 8000
 log_level = "info"
 
 [llm]
-default_model = "anthropic/claude-sonnet-4-6"
+default_model  = "anthropic/claude-sonnet-4-6"
 deep_rca_model = "anthropic/claude-opus-4-6"
 
 [auth]
 api_keys = [{hash = "<sha256>", subject = "alice", roles = ["oncall"]}]
 
-# ── Backends ──────────────────────────────────────────────────────────────────
-[backends.default]
-type = "cloudwatch"
-region = "us-east-1"
-
-[backends.grafana-local]
-type = "grafana"
-loki_url = "http://loki:3100"
-prometheus_url = "http://prometheus:9090"
-service_label = "service"
-
-# ── Route specific services to non-default backends ───────────────────────────
-[services.payments-api]
-backend = "default"     # which [backends.*] entry to use
-repo = "acme/payments"  # GitHub repo for code investigation
-
-[services.ops-dashboard]
-backend = "grafana-local"
-
-# ── Notifiers (watch alert delivery) ─────────────────────────────────────────
-[notifiers.default]
-type = "slack"
-bot_token = "env:SLACK_BOT_TOKEN"
-channel = "#incidents"
-
-[notifiers.discord-ops]
-type = "discord"
-webhook_url = "env:DISCORD_OPS_WEBHOOK_URL"
-
-# ── Slack bot (slash commands) ────────────────────────────────────────────────
 [slack]
-bot_token = "env:SLACK_BOT_TOKEN"
+bot_token      = "env:SLACK_BOT_TOKEN"
 alerts_channel = "#incidents"
 
-# ── GitHub integration ────────────────────────────────────────────────────────
 [github]
-token = "env:GITHUB_TOKEN"
+token        = "env:GITHUB_TOKEN"
 default_repo = "acme/monorepo"
+
+# ── Profiles ──────────────────────────────────────────────────────────────────
+
+[profiles.aws-prod]
+backend = "cloudwatch"
+region  = "us-east-1"
+
+  [profiles.aws-prod.notifiers.default]
+  type      = "slack"
+  bot_token = "env:SLACK_BOT_TOKEN"
+  channel   = "#prod-incidents"
+
+  [profiles.aws-prod.services.payments-api]
+  repo          = "acme/payments"
+  resource_type = "ecs"
+  log_format    = "json"
+
+[profiles.local-dev]
+backend        = "grafana"
+loki_url       = "http://localhost:3100"
+prometheus_url = "http://localhost:9090"
+api_key        = "env:GRAFANA_API_KEY"
+
+  [profiles.local-dev.notifiers.default]
+  type        = "discord"
+  webhook_url = "env:DISCORD_DEV_WEBHOOK_URL"
 ```
 
 ### `~/.tinker/.env` (secrets only)
@@ -653,10 +696,11 @@ default_repo = "acme/monorepo"
 ANTHROPIC_API_KEY=sk-ant-...
 SLACK_BOT_TOKEN=xoxb-...
 GITHUB_TOKEN=ghp_...
-DISCORD_OPS_WEBHOOK_URL=https://discord.com/api/webhooks/...
+GRAFANA_API_KEY=glsa_...
+DISCORD_DEV_WEBHOOK_URL=https://discord.com/api/webhooks/...
 ```
 
-### CLI
+### CLI config files
 
 | File / Variable | Description |
 |---|---|
@@ -669,7 +713,7 @@ DISCORD_OPS_WEBHOOK_URL=https://discord.com/api/webhooks/...
 
 ### Fallback: `.env`-only mode
 
-If `config.toml` does not exist, the server falls back to env var configuration (original behaviour):
+If `config.toml` does not exist, the server falls back to env var configuration:
 
 | Variable | Description | Default |
 |---|---|---|
@@ -706,11 +750,9 @@ cd local-dev && ./run.sh
 
 # 2. Configure and start Tinker server (separate terminal)
 tinker init server
-#   → detects no cloud (asks manually), pick "grafana"
-#   → enter Loki URL: http://localhost:3100
-#   → enter ANTHROPIC_API_KEY
-#   → writes ~/.tinker/.env
-tinker server      # picks up ~/.tinker/.env automatically
+#   Step 1 → pick Anthropic, enter ANTHROPIC_API_KEY
+#   Step 5 → pick "Self-hosted (Grafana)", enter Loki/Prometheus URLs
+tinker server
 
 # 3. Point CLI at it
 tinker init cli    # URL: http://localhost:8000
@@ -735,7 +777,7 @@ uv run tinker server
 
 # Install globally as editable (changes in src/ take effect immediately)
 uv tool install --editable .
-tinker --help                    # now works without uv run
+tinker --help
 
 # Tests
 uv run pytest                    # all tests
