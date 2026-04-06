@@ -56,17 +56,30 @@ class AuthContext:
 # ── API key validation ────────────────────────────────────────────────────────
 
 def _load_api_keys() -> dict[str, dict]:
-    """Load API keys from config.
+    """Load API keys from config.toml [auth] (preferred) or TINKER_API_KEYS env var (legacy).
 
-    TINKER_API_KEYS format (JSON):
-    [
-      {"hash": "<sha256-hex>", "subject": "cli-mohit", "roles": ["sre"]},
-      {"hash": "<sha256-hex>", "subject": "slack-bot", "roles": ["oncall"]}
-    ]
+    config.toml format:
+        [auth]
+        api_keys = [{hash = "<sha256-hex>", subject = "cli-mohit", roles = ["oncall"]}]
+
+    Legacy TINKER_API_KEYS format (JSON string in .env):
+        [{"hash": "<sha256-hex>", "subject": "cli-mohit", "roles": ["sre"]}]
     """
     import json
+
+    # Prefer config.toml [auth] entries
+    try:
+        from tinker import toml_config as tc
+        cfg = tc.get()
+        if cfg.auth.api_keys:
+            return {entry.hash: {"hash": entry.hash, "subject": entry.subject, "roles": entry.roles}
+                    for entry in cfg.auth.api_keys}
+    except Exception:
+        pass
+
+    # Fall back to legacy TINKER_API_KEYS env var
     from tinker.config import settings
-    raw = settings.tinker_api_keys  # reads from ~/.tinker/.env via pydantic-settings
+    raw = settings.tinker_api_keys
     try:
         entries = json.loads(raw)
         return {entry["hash"]: entry for entry in entries}
@@ -75,12 +88,12 @@ def _load_api_keys() -> dict[str, dict]:
         return {}
 
 
-_API_KEYS: dict[str, dict] = {}  # loaded lazily on first request
+_API_KEYS: dict[str, dict] | None = None  # loaded lazily on first request
 
 
 def _validate_api_key(token: str) -> AuthContext | None:
     global _API_KEYS
-    if not _API_KEYS:
+    if _API_KEYS is None:
         _API_KEYS = _load_api_keys()
 
     token_hash = hashlib.sha256(token.encode()).hexdigest()
