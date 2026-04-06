@@ -117,6 +117,7 @@ class TomlConfig:
     slack: SlackSection = field(default_factory=SlackSection)
     github: GitHubSection = field(default_factory=GitHubSection)
 
+
     def active_profile_config(self) -> ProfileConfig | None:
         """Return the active ProfileConfig, or None if no profiles are defined."""
         if not self.profiles:
@@ -287,6 +288,7 @@ def load(path: Path = _CONFIG_PATH) -> TomlConfig:
             token=_resolve(gh.get("token")),
             default_repo=gh.get("default_repo"),
         )
+
 
     log.info(
         "toml_config.loaded",

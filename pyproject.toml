@@ -43,6 +43,8 @@ dependencies = [
     "apscheduler>=3.10",
     # Streaming (Loki websocket tail)
     "websockets>=12",
+    # Observability
+    "langfuse>=2.0",
 ]
 
 [project.scripts]

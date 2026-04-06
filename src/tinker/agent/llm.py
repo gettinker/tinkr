@@ -70,6 +70,33 @@ def _sync_llm_keys() -> None:
 _sync_llm_keys()
 
 
+def _init_langfuse() -> None:
+    """Register Langfuse as a LiteLLM callback if configured.
+
+    Langfuse is configured via ~/.tinker/.env:
+        LANGFUSE_PUBLIC_KEY=pk-lf-...
+        LANGFUSE_SECRET_KEY=sk-lf-...
+        LANGFUSE_HOST=https://cloud.langfuse.com   # optional, for self-hosted
+
+    All model calls (complete + stream_complete) are traced automatically
+    once the callback is registered — no per-call changes needed.
+    """
+    import os
+    public_key = os.environ.get("LANGFUSE_PUBLIC_KEY")
+    secret_key = os.environ.get("LANGFUSE_SECRET_KEY")
+    if not public_key or not secret_key:
+        return
+    try:
+        litellm.success_callback.append("langfuse")
+        litellm.failure_callback.append("langfuse")
+        log.info("langfuse.enabled", host=os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"))
+    except Exception as exc:
+        log.warning("langfuse.init_failed", error=str(exc))
+
+
+_init_langfuse()
+
+
 def _is_anthropic(model: str) -> bool:
     """True if the model routes to Anthropic (direct or via OpenRouter)."""
     return "claude" in model.lower()
