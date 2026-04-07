@@ -260,6 +260,12 @@ class RemoteClient:
             resp.raise_for_status()
         return resp.json()
 
+    async def delete_watch(self, watch_id: str) -> dict[str, Any]:
+        async with self._client() as c:
+            resp = await c.delete(f"/api/v1/watches/{watch_id}/delete")
+            resp.raise_for_status()
+        return resp.json()
+
     # ── Ops ───────────────────────────────────────────────────────────────────
 
     async def health(self) -> dict[str, Any]:

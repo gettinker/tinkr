@@ -112,6 +112,16 @@ class WatchManager:
             log.info("watch.stopped", watch_id=watch_id)
         return ok
 
+    def delete_watch(self, watch_id: str) -> bool:
+        """Cancel the task and hard-delete the DB record. Returns True if found."""
+        task = self._tasks.pop(watch_id, None)
+        if task:
+            task.cancel()
+        ok = self._get_db().delete_watch(watch_id)
+        if ok:
+            log.info("watch.deleted", watch_id=watch_id)
+        return ok
+
     def list_all(self) -> list[dict[str, Any]]:
         return self._get_db().list_watches()
 

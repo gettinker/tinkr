@@ -39,5 +39,15 @@ class SlackNotifier(AlertNotifier):
             await client.chat_postMessage(channel=ch, text="\n".join(lines))
             log.info("notifier.slack.sent", watch_id=watch_id, channel=ch, count=len(anomalies))
         except Exception as exc:
-            log.warning("notifier.slack.failed", watch_id=watch_id, channel=ch, error=str(exc))
+            err_str = str(exc)
+            if "not_in_channel" in err_str:
+                log.warning(
+                    "notifier.slack.not_in_channel",
+                    watch_id=watch_id,
+                    channel=ch,
+                    hint=f"Invite the bot to {ch} with /invite @<bot-name>",
+                    error=err_str,
+                )
+            else:
+                log.warning("notifier.slack.failed", watch_id=watch_id, channel=ch, error=err_str)
             raise

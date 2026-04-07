@@ -123,3 +123,7 @@ async def get_watches(client: RemoteClient) -> list[dict]:
 
 async def stop_watch(client: RemoteClient, watch_id: str) -> None:
     await client.stop_watch(watch_id)
+
+
+async def delete_watch(client: RemoteClient, watch_id: str) -> None:
+    await client.delete_watch(watch_id)

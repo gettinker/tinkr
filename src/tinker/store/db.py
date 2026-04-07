@@ -184,6 +184,17 @@ class TinkerDB:
         self.update_watch(watch_id, status="stopped")
         return True
 
+    def delete_watch(self, watch_id: str) -> bool:
+        """Hard-delete a watch record regardless of status. Returns True if found."""
+        row = self._conn.execute(
+            "SELECT watch_id FROM watches WHERE watch_id = ?", (watch_id,)
+        ).fetchone()
+        if not row:
+            return False
+        self._conn.execute("DELETE FROM watches WHERE watch_id = ?", (watch_id,))
+        self._conn.commit()
+        return True
+
     def clean_watches(self) -> int:
         cur = self._conn.execute(
             "DELETE FROM watches WHERE status IN ('stopped', 'dead')"

@@ -435,6 +435,21 @@ def watch_stop(
     _run(_watch_stop(watch_id))
 
 
+@watch_app.command("delete")
+def watch_delete(
+    watch_id: str = typer.Argument(..., help="Watch ID from 'tinker watch list'"),
+) -> None:
+    """[bold cyan]Permanently delete a watch from the Tinker server.[/bold cyan]
+
+    Removes the watch record entirely (unlike [bold]stop[/bold] which keeps it as 'stopped').
+
+    Example:
+
+      tinker watch delete watch-3a976e39
+    """
+    _run(_watch_delete(watch_id))
+
+
 async def _watch_start(service, notifier, destination, interval) -> None:
     from tinker.interfaces.handlers import start_watch
     client = _get_client()
@@ -463,6 +478,13 @@ async def _watch_stop(watch_id) -> None:
     client = _get_client()
     await stop_watch(client, watch_id)
     console.print(f"[green]Watch {watch_id} stopped.[/green]")
+
+
+async def _watch_delete(watch_id) -> None:
+    from tinker.interfaces.handlers import delete_watch
+    client = _get_client()
+    await delete_watch(client, watch_id)
+    console.print(f"[green]Watch {watch_id} deleted.[/green]")
 
 
 # ── Profile commands ──────────────────────────────────────────────────────────

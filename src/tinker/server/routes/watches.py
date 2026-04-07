@@ -93,3 +93,16 @@ async def stop_watch(
         raise HTTPException(status_code=404, detail=f"Watch {watch_id!r} not found or already stopped")
     log.info("watch.stopped_via_api", watch_id=watch_id, actor=auth.subject)
     return {"status": "stopped", "watch_id": watch_id}
+
+
+@router.delete("/{watch_id}/delete")
+async def delete_watch(
+    watch_id: str,
+    auth: Annotated[AuthContext, Depends(require_auth)],
+) -> dict[str, Any]:
+    m = _get_manager()
+    ok = m.delete_watch(watch_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Watch {watch_id!r} not found")
+    log.info("watch.deleted_via_api", watch_id=watch_id, actor=auth.subject)
+    return {"status": "deleted", "watch_id": watch_id}
