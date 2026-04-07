@@ -38,6 +38,7 @@ def _repo_file_tree(repo: "Repository") -> list[str]:
 
 
 def _resolve_path(repo: "Repository", path: str) -> str | None:
+    path = path.lstrip("/")
     """Find the best repo path for a (possibly container-relative) stack path.
 
     Matching strategy (first match wins):
@@ -137,6 +138,7 @@ class GitHubCodeProvider:
 
     def get_file(self, path: str, ref: str | None = None) -> str:
         """Return file contents, resolving container-relative stack paths automatically."""
+        path = path.lstrip("/")
         kwargs: dict = {}
         if ref:
             kwargs["ref"] = ref
@@ -183,6 +185,7 @@ class GitHubCodeProvider:
 
     def get_commits(self, path: str = ".", n: int = 10) -> str:
         """Return recent commits touching a path, resolving container-relative paths."""
+        path = path.lstrip("/")
         resolved_path: str | None = path if path != "." else None
 
         if resolved_path:
@@ -227,6 +230,7 @@ class GitHubCodeProvider:
         branch: str,
     ) -> None:
         """Create or update a file on the given branch."""
+        path = path.lstrip("/")
         try:
             existing = self._repo.get_contents(path, ref=branch)
             sha = existing.sha if not isinstance(existing, list) else None  # type: ignore[union-attr]
