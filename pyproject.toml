@@ -43,6 +43,7 @@ dependencies = [
     "apscheduler>=3.10",
     # Streaming (Loki websocket tail)
     "websockets>=12",
+    "langfuse>=3.0",
 ]
 
 [project.scripts]
@@ -54,8 +55,6 @@ tinker-azure-mcp      = "tinker.mcp_servers.azure_server:main"
 tinker-grafana-mcp    = "tinker.mcp_servers.grafana_server:main"
 tinker-datadog-mcp    = "tinker.mcp_servers.datadog_server:main"
 
-[project.optional-dependencies]
-langfuse = ["langfuse>=2.0,<3.0"]
 
 [dependency-groups]
 dev = [

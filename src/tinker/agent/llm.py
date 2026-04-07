@@ -71,19 +71,18 @@ _sync_llm_keys()
 
 
 def _init_langfuse() -> None:
-    """Register Langfuse as a LiteLLM callback if configured.
+    """Initialise Langfuse v4 tracing for all LiteLLM calls.
+
+    Langfuse v4 is OTEL-native: get_client() registers a TracerProvider that
+    exports spans to Langfuse. LiteLLM's "otel" callback then picks that up
+    automatically — no langfuse-specific LiteLLM integration needed.
 
     Reads from ~/.tinker/.env:
         LANGFUSE_PUBLIC_KEY=pk-lf-...
         LANGFUSE_SECRET_KEY=sk-lf-...
-        LANGFUSE_HOST=https://cloud.langfuse.com   # or LANGFUSE_BASE_URL
+        LANGFUSE_BASE_URL=https://cloud.langfuse.com   # optional
 
-    Langfuse is an optional dependency (install with: pip install 'tinker[langfuse]').
-    If not installed or incompatible with the current Python version, tracing is
-    silently skipped — the server starts normally.
-
-    Must be called after ~/.tinker/.env has been loaded into os.environ (i.e.
-    after toml_config.get() has run).
+    Must be called after toml_config.get() so ~/.tinker/.env is in os.environ.
     """
     import os
 
@@ -92,31 +91,22 @@ def _init_langfuse() -> None:
     if not public_key or not secret_key:
         return
 
-    # Normalise LANGFUSE_BASE_URL → LANGFUSE_HOST so LiteLLM can find it
-    if "LANGFUSE_HOST" not in os.environ and os.environ.get("LANGFUSE_BASE_URL"):
-        os.environ["LANGFUSE_HOST"] = os.environ["LANGFUSE_BASE_URL"]
+    # LANGFUSE_BASE_URL is the v4 env var; older env files may use LANGFUSE_HOST
+    if "LANGFUSE_BASE_URL" not in os.environ and os.environ.get("LANGFUSE_HOST"):
+        os.environ["LANGFUSE_BASE_URL"] = os.environ["LANGFUSE_HOST"]
 
     try:
-        import importlib
-        importlib.import_module("langfuse")
+        import langfuse as lf
+        lf.get_client()   # registers OTEL TracerProvider pointing at Langfuse
     except Exception as exc:
-        log.warning(
-            "langfuse.unavailable",
-            error=str(exc),
-            hint="Install with: pip install 'tinker[langfuse]' (requires Python <3.14)",
-        )
+        log.warning("langfuse.init_failed", error=str(exc))
         return
 
-    if "langfuse" not in litellm.success_callback:
-        try:
-            litellm.success_callback.append("langfuse")
-            litellm.failure_callback.append("langfuse")
-            log.info(
-                "langfuse.enabled",
-                host=os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"),
-            )
-        except Exception as exc:
-            log.warning("langfuse.init_failed", error=str(exc))
+    if "otel" not in litellm.success_callback:
+        litellm.success_callback.append("otel")
+        litellm.failure_callback.append("otel")
+        base_url = os.environ.get("LANGFUSE_BASE_URL", "https://cloud.langfuse.com")
+        log.info("langfuse.enabled", url=base_url)
 
 
 def _is_anthropic(model: str) -> bool:
