@@ -65,6 +65,10 @@ deploy/docker-compose.override.yml
 # ── VCR cassettes with real responses (regenerate from mocks) ─────────────────
 tests/fixtures/cassettes/*.yaml
 
+# ── Node.js ───────────────────────────────────────────────────────────────────
+docs/node_modules/
+docs/build/
+
 # ── Logs & tmp ────────────────────────────────────────────────────────────────
 *.log
 tmp/
