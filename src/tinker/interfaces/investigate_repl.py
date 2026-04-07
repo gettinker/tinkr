@@ -484,13 +484,14 @@ class InvestigateREPL:
             show_header=True,
             header_style="bold magenta",
             title=f"Error Groups — {self._service} (last {self._window}m, level={self._level})",
+            show_lines=True,
         )
-        table.add_column("#", width=3, justify="right")
-        table.add_column("Level", width=8)
-        table.add_column("Count", width=7, justify="right")
-        table.add_column("Pattern", ratio=3)
-        table.add_column("Traces", width=7, justify="right")
-        table.add_column("First seen", width=10)
+        table.add_column("#", width=3, justify="right", no_wrap=True)
+        table.add_column("Level", width=8, no_wrap=True)
+        table.add_column("Count", width=7, justify="right", no_wrap=True)
+        table.add_column("Pattern", ratio=1, overflow="fold")
+        table.add_column("Traces", width=7, justify="right", no_wrap=True)
+        table.add_column("First seen", width=10, no_wrap=True)
 
         for i, g in enumerate(self._groups, 1):
             lvl_style = _LEVEL_STYLE.get(g.level, "white")
@@ -500,7 +501,7 @@ class InvestigateREPL:
                 str(i),
                 f"[{lvl_style}]{g.level}[/{lvl_style}]",
                 str(g.count),
-                g.template[:90],
+                g.template,
                 f"[red]{n_traces}[/red]" if n_traces else "—",
                 first,
             )
@@ -513,11 +514,11 @@ class InvestigateREPL:
     def _print_entries(self, group: ErrorGroup) -> None:
         console.print(
             Panel(
-                f"[bold]{group.template[:100]}[/bold]\n"
+                f"[bold]{group.template}[/bold]\n\n"
                 f"[dim]{group.count} occurrences · {group.level} · "
                 f"first={group.first_seen.strftime('%H:%M:%S') if group.first_seen else '?'} "
                 f"last={group.last_seen.strftime('%H:%M:%S') if group.last_seen else '?'}[/dim]",
-                title=f"Group detail",
+                title="Group detail",
                 border_style="cyan",
             )
         )
@@ -532,22 +533,22 @@ class InvestigateREPL:
                     )
                 )
 
-        table = Table(show_header=True, header_style="bold magenta", title="Log entries")
-        table.add_column("#", width=3, justify="right")
-        table.add_column("Time", width=10)
-        table.add_column("Level", width=8)
-        table.add_column("Message")
+        table = Table(show_header=True, header_style="bold magenta", title="Log entries",
+                      show_lines=True)
+        table.add_column("#", width=3, justify="right", no_wrap=True)
+        table.add_column("Time", width=10, no_wrap=True)
+        table.add_column("Level", width=8, no_wrap=True)
+        table.add_column("Message", overflow="fold")
 
         entries = group.entries[:30]
         for i, e in enumerate(entries, 1):
             lvl_style = _LEVEL_STYLE.get((e.level or "").upper(), "white")
             ts = e.timestamp.strftime("%H:%M:%S") if e.timestamp else "?"
-            # Truncate message for table; user can scroll terminal for full text
             table.add_row(
                 str(i),
                 ts,
                 f"[{lvl_style}]{e.level}[/{lvl_style}]",
-                (e.message or "")[:120],
+                e.message or "",
             )
 
         console.print(table)

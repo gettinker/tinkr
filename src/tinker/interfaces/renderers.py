@@ -90,16 +90,16 @@ def render_logs(entries: list[LogEntry], fmt: OutputFormat) -> None:
     if not entries:
         console.print("[dim]No log entries found.[/dim]")
         return
-    table = Table(show_header=True, header_style="bold magenta")
-    table.add_column("Timestamp", style="dim", width=20)
-    table.add_column("Level", width=8)
-    table.add_column("Message")
+    table = Table(show_header=True, header_style="bold magenta", show_lines=True)
+    table.add_column("Timestamp", style="dim", width=20, no_wrap=True)
+    table.add_column("Level", width=8, no_wrap=True)
+    table.add_column("Message", overflow="fold")
     for e in entries:
         style = _LEVEL_STYLES.get(e.level.upper(), "white")
         table.add_row(
             e.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
             f"[{style}]{e.level}[/{style}]",
-            e.message[:200],
+            e.message,
         )
     console.print(table)
 
@@ -111,7 +111,7 @@ def render_log_entry(e: LogEntry, fmt: OutputFormat) -> None:
         return
     style = _LEVEL_STYLES.get(e.level.upper(), "white")
     ts = e.timestamp.strftime("%H:%M:%S")
-    console.print(f"[dim]{ts}[/dim]  [{style}]{e.level:<8}[/{style}]  {e.message[:200]}")
+    console.print(f"[dim]{ts}[/dim]  [{style}]{e.level:<8}[/{style}]  {e.message}")
 
 
 # ── Metrics ───────────────────────────────────────────────────────────────────
