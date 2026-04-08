@@ -1,6 +1,6 @@
 # Development Guide
 
-Everything you need to run, test, and extend Tinker locally.
+Everything you need to run, test, and extend Tinkr locally.
 
 ---
 
@@ -19,8 +19,6 @@ Everything you need to run, test, and extend Tinker locally.
 
 ```bash
 git clone https://github.com/gettinker/tinkr
-cd tinkr
-cd tinker
 
 # Create virtualenv and install all deps (including dev deps)
 uv sync
@@ -160,7 +158,7 @@ src/tinker/
 ├── interfaces/     CLI (Typer) + Slack bot (Bolt)
 ├── monitor/        Background anomaly detection (watches)
 ├── code/           Git/GitHub integration, fix application
-├── store/          SQLite persistence (TinkerDB)
+├── store/          SQLite persistence (TinkrDB)
 ├── notifiers/      Slack, Discord, webhook notifiers
 └── config.py       Pydantic-settings — all env vars
 ```

@@ -1,4 +1,4 @@
-# Contributing to Tinker
+# Contributing to Tinkr
 
 Thank you for your interest in contributing. This document covers how to get set up, what we look for in PRs, and the areas where help is most welcome.
 
@@ -22,8 +22,6 @@ Quick start:
 
 ```bash
 git clone https://github.com/gettinker/tinkr
-cd tinkr
-cd tinker
 uv sync
 uv run pytest
 ```

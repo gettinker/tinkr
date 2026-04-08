@@ -1,4 +1,4 @@
-# Tinker
+# Tinkr
 
 Open-source AI-powered observability and incident response agent. Connects to your cloud backend, analyzes logs and metrics, cross-references incidents with your codebase, and suggests fixes — with human approval before any code changes.
 
@@ -8,7 +8,7 @@ Open-source AI-powered observability and incident response agent. Connects to yo
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  Tinker Server  (runs anywhere with cloud access)                │
+│  Tinkr Server   (runs anywhere with cloud access)                │
 │                                                                  │
 │  tinkr-server  ──► FastAPI on :8000                             │
 │                                                                  │
@@ -56,8 +56,6 @@ pip install tinkr
 
 ```bash
 git clone https://github.com/gettinker/tinkr
-cd tinkr
-cd tinker
 uv sync                       # creates .venv + installs all deps
 uv tool install --editable .  # installs tinkr globally as editable
 ```
@@ -66,8 +64,6 @@ uv tool install --editable .  # installs tinkr globally as editable
 
 ```bash
 git clone https://github.com/gettinker/tinkr
-cd tinkr
-cd tinker
 docker build -t tinker:local .
 docker run -d -p 8000:8000 --env-file ~/.tinker/.env -v ~/.tinker:/root/.tinker tinker:local
 ```
@@ -103,7 +99,7 @@ tinkr-server start
 tinkr init
 # Tinker server URL [http://localhost:8000]: https://tinker.acme.internal
 # API token: <paste key from step 1>
-# ✓ Connected: Tinker v0.1.0  backend=cloudwatch
+# ✓ Connected: Tinkr v0.1.0  backend=cloudwatch
 # ✓ Saved: ~/.tinker/config
 
 # 4. Verify
@@ -492,7 +488,7 @@ tinkr watch delete watch-abc123
 
 **Alert message format (Slack):**
 ```
-*Tinker Watch* — `payments-api`  [watch-a3f2b1c4]
+*Tinkr Watch* — `payments-api`  [watch-a3f2b1c4]
 
 • *HIGH* `error_count` — 847 errors in 10m (threshold: 10)
 • *MEDIUM* `latency_p99` — 2.4s avg (threshold: 1s)
@@ -525,7 +521,7 @@ tinkr metrics payments-api http_requests_total --resource ecs
 
 ## Query syntax
 
-One query syntax works on every backend. Tinker translates it to CloudWatch Logs Insights, LogQL, GCP filter, KQL, Datadog search, or Elasticsearch DSL automatically.
+One query syntax works on every backend. Tinkr translates it to CloudWatch Logs Insights, LogQL, GCP filter, KQL, Datadog search, or Elasticsearch DSL automatically.
 
 | Pattern | Meaning |
 |---|---|
@@ -620,9 +616,9 @@ tinkr-server           # or: nohup tinkr-server start start &
 ### GCP (Cloud Run / GCE)
 
 ```bash
-gcloud run deploy tinker \
+gcloud run deploy tinkr \
   --image gcr.io/your-project/tinker-agent \
-  --service-account tinker@your-project.iam.gserviceaccount.com \
+  --service-account tinkr@your-project.iam.gserviceaccount.com \
   --set-env-vars TINKER_BACKEND=gcp,GCP_PROJECT_ID=your-project
 ```
 
@@ -642,7 +638,7 @@ az role assignment create --assignee <MANAGED_IDENTITY_PRINCIPAL_ID> \
 ```bash
 cp .env.example .env      # fill in TINKER_BACKEND + credentials
 docker compose -f deploy/docker-compose.yml up -d
-# Starts Tinker server + Loki + Prometheus + Grafana for local testing
+# Starts Tinkr server + Loki + Prometheus + Grafana for local testing
 ```
 
 ### Managing API keys
@@ -977,7 +973,7 @@ See [.env.example](.env.example) for the full env var reference.
 
 ## Security
 
-| Concern | How Tinker handles it |
+| Concern | How Tinkr handles it |
 |---|---|
 | Cloud credentials | Never on the CLI — server uses cloud-native identity |
 | Client auth | Short API tokens, SHA-256 hashed at rest |
@@ -996,7 +992,7 @@ The [`local-dev/`](local-dev/) directory runs a full observability stack locally
 # 1. Start Loki + Prometheus + Grafana + dummy payments-api
 cd local-dev && ./run.sh
 
-# 2. Configure and start Tinker server (separate terminal)
+# 2. Configure and start Tinkr server (separate terminal)
 tinkr-server init
 #   Step 1 → pick Anthropic, enter ANTHROPIC_API_KEY
 #   Step 5 → pick "Self-hosted (Grafana)", enter Loki/Prometheus URLs
