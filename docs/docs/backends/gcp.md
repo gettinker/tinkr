@@ -21,7 +21,7 @@ The backend uses Application Default Credentials (`google-auth`):
 2. Service account key file (`GOOGLE_APPLICATION_CREDENTIALS`) — avoid in production
 3. `gcloud auth application-default login` — local development
 
-**No credentials go in the Tinker config.** Attach Workload Identity to your Cloud Run service or GKE service account.
+**No credentials go in the Tinkr config.** Attach Workload Identity to your Cloud Run service or GKE service account.
 
 ---
 
@@ -75,7 +75,7 @@ resource_type = "cloudrun"
 
 ## Log query
 
-Tinker uses the Cloud Logging API with a structured filter:
+Tinkr uses the Cloud Logging API with a structured filter:
 
 ```
 resource.type = "cloud_run_revision"
@@ -84,13 +84,13 @@ severity >= ERROR
 timestamp >= "2026-04-07T13:00:00Z"
 ```
 
-Log fields are mapped to Tinker's `LogEntry` schema using the `jsonPayload` or `textPayload` field.
+Log fields are mapped to Tinkr's `LogEntry` schema using the `jsonPayload` or `textPayload` field.
 
 ---
 
 ## Metrics
 
-Tinker calls the Cloud Monitoring `timeSeries.list` API. Common metric types:
+Tinkr calls the Cloud Monitoring `timeSeries.list` API. Common metric types:
 
 | Service | Metric type |
 |---|---|
@@ -112,7 +112,7 @@ from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 ```
 
-Tinker calls `cloudtrace.projects.traces.list` to fetch recent traces.
+Tinkr calls `cloudtrace.projects.traces.list` to fetch recent traces.
 
 ---
 

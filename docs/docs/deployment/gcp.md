@@ -5,13 +5,13 @@ title: GCP
 
 # Deploying on GCP
 
-Tinker uses Workload Identity — no service account JSON files or long-lived credentials needed.
+Tinkr uses Workload Identity — no service account JSON files or long-lived credentials needed.
 
 ---
 
 ## Required IAM roles
 
-Assign these roles to the service account Tinker runs as:
+Assign these roles to the service account Tinkr runs as:
 
 | Role | Purpose |
 |---|---|

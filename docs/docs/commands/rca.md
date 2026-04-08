@@ -77,7 +77,7 @@ No internal code change or configuration drift detected.
 
 ## Model selection
 
-For high-severity incidents, Tinker automatically switches to `claude-opus-4-6` with extended thinking for deeper analysis. For routine checks, it uses `claude-sonnet-4-6`.
+For high-severity incidents, Tinkr automatically switches to `claude-opus-4-6` with extended thinking for deeper analysis. For routine checks, it uses `claude-sonnet-4-6`.
 
 ## JSON stream format
 

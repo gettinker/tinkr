@@ -20,7 +20,7 @@ Datadog requires two keys:
 - **API key** (`DD_API_KEY`) — identifies your organization; used for all API calls
 - **Application key** (`DD_APP_KEY`) — grants read access to your Datadog account data
 
-Both must be present for Tinker to function.
+Both must be present for Tinkr to function.
 
 Store them in your cloud secrets manager (AWS Secrets Manager, GCP Secret Manager, or Azure Key Vault) and inject as environment variables. Never hardcode them.
 
@@ -53,7 +53,7 @@ DD_APP_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ## Log query
 
-Tinker calls the Datadog Logs API v2 (`POST /api/v2/logs/events/search`):
+Tinkr calls the Datadog Logs API v2 (`POST /api/v2/logs/events/search`):
 
 ```json
 {
@@ -73,7 +73,7 @@ The service name is matched using the `service` tag. Ensure your application set
 
 ## Metrics
 
-Tinker calls the Datadog Metrics API v1 (`GET /api/v1/query`):
+Tinkr calls the Datadog Metrics API v1 (`GET /api/v1/query`):
 
 ```
 q=avg:trace.web.request{service:payments-api}.as_count()&from=...&to=...
@@ -95,7 +95,7 @@ Common Datadog metrics:
 
 ## Distributed tracing (APM)
 
-Tinker calls the Datadog APM Traces API v2 (`POST /api/v2/spans/events/search`):
+Tinkr calls the Datadog APM Traces API v2 (`POST /api/v2/spans/events/search`):
 
 ```json
 {

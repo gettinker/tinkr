@@ -15,7 +15,7 @@ TINKR_BACKEND=elastic
 
 ## Authentication
 
-Tinker authenticates to Elasticsearch using an API key. Create one in Kibana:
+Tinkr authenticates to Elasticsearch using an API key. Create one in Kibana:
 
 **Stack Management → Security → API Keys → Create API Key**
 
@@ -57,7 +57,7 @@ ELASTIC_API_KEY=VnVhQ2ZHY0JDZGJrZXctATxxxxxxxxxxxxxxxx==
 
 ## Log query (Elasticsearch DSL)
 
-Tinker queries using the Elasticsearch DSL:
+Tinkr queries using the Elasticsearch DSL:
 
 ```json
 {
@@ -77,7 +77,7 @@ Tinker queries using the Elasticsearch DSL:
 
 Field mapping (ECS-aligned):
 
-| Tinker field | Elasticsearch field |
+| Tinkr field | Elasticsearch field |
 |---|---|
 | `service` | `service.name` |
 | `level` | `log.level` |
@@ -90,7 +90,7 @@ If your indices use a different field layout, set `ELASTIC_INDEX_PATTERN` to tar
 
 ## Metrics (aggregations)
 
-Tinker uses Elasticsearch date-histogram aggregations to compute metric time series:
+Tinkr uses Elasticsearch date-histogram aggregations to compute metric time series:
 
 ```json
 {
@@ -108,7 +108,7 @@ Tinker uses Elasticsearch date-histogram aggregations to compute metric time ser
 
 ## Distributed tracing (Elastic APM)
 
-Tinker queries the `traces-*` and `apm-*` indices for root spans (spans with no `parent.id`):
+Tinkr queries the `traces-*` and `apm-*` indices for root spans (spans with no `parent.id`):
 
 ```json
 {

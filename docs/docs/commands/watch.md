@@ -113,12 +113,12 @@ A notification fires only when the anomaly set **changes** — new anomalies app
 
 ### Anomaly change detection
 
-Tinker computes a SHA-256 hash of the current anomaly set. If the hash differs from the previous poll, a notification is sent.
+Tinkr computes a SHA-256 hash of the current anomaly set. If the hash differs from the previous poll, a notification is sent.
 
 ### Notification message (Slack example)
 
 ```
-*Tinker Watch* — `payments-api`  [watch-a3f2b1c4]
+*Tinkr Watch* — `payments-api`  [watch-a3f2b1c4]
 
 • *HIGH* `error_count` — 847 errors in 10m (threshold: 10)
 • *MEDIUM* `latency_p99` — 2.4s avg (threshold: 1s)
@@ -152,7 +152,7 @@ See [Webhooks](../integrations/webhooks) and [Slack](../integrations/slack) for 
 
 ## Persistence
 
-Watches persist across server restarts. The watch state is stored in `~/.tinkr/tinker.db` (SQLite). When the Tinker server starts, it resumes all watches that were `running` at shutdown.
+Watches persist across server restarts. The watch state is stored in `~/.tinkr/tinker.db` (SQLite). When the Tinkr server starts, it resumes all watches that were `running` at shutdown.
 
 ## See also
 

@@ -61,7 +61,7 @@ Target: 99.9%   Window: 30d
 
 ## Availability calculation
 
-Tinker queries the log backend for error-level events and total request counts:
+Tinkr queries the log backend for error-level events and total request counts:
 
 ```
 availability = (total_requests - error_requests) / total_requests × 100

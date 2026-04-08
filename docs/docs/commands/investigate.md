@@ -31,7 +31,7 @@ tinker investigate payments-api
 tinker investigate payments-api --since 2h
 ```
 
-Tinker immediately fetches anomalies and recent logs, then opens the REPL:
+Tinkr immediately fetches anomalies and recent logs, then opens the REPL:
 
 ```
 Investigating payments-api  [sess-a3f2b1c4]

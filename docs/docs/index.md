@@ -61,7 +61,23 @@ pip install tinkr
 
 See [Installation](/install) for all options including building from source.
 
-### Step 2 — Set up the server
+### Step 2 — Pick a backend
+
+Tinkr connects to your existing observability stack. Before running the wizard, decide which backend matches your setup:
+
+| If you use… | Set `TINKR_BACKEND` to… |
+|---|---|
+| AWS CloudWatch | `cloudwatch` |
+| Google Cloud Logging/Monitoring | `gcp` |
+| Azure Monitor | `azure` |
+| Grafana / Loki / Prometheus | `grafana` |
+| Datadog | `datadog` |
+| Elasticsearch | `elastic` |
+| OpenTelemetry / OpenSearch | `otel` |
+
+See [Backends](/backends) for credential requirements and config details for each option.
+
+### Step 3 — Set up the server
 
 On the machine that has cloud access (EC2, Cloud Run, your laptop):
 
@@ -79,14 +95,14 @@ The wizard walks you through:
 
 It writes `~/.tinkr/config.toml` and `~/.tinkr/.env`.
 
-### Step 3 — Start the server
+### Step 4 — Start the server
 
 ```bash
 tinkr-server start
 # Listening on http://0.0.0.0:8000
 ```
 
-### Step 4 — Connect the CLI
+### Step 5 — Connect the CLI
 
 ```bash
 tinkr init
@@ -95,7 +111,7 @@ tinkr init
 # ✓ Connected: Tinkr v0.1.0b1  backend=cloudwatch
 ```
 
-### Step 5 — Run your first query
+### Step 6 — Run your first query
 
 ```bash
 tinkr doctor                          # check server + backend

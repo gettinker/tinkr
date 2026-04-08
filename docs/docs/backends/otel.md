@@ -24,7 +24,7 @@ OTel Collector
     └──► Prometheus (metrics)
          │
          ▼
-      Tinker (TINKR_BACKEND=otel)
+      Tinkr (TINKR_BACKEND=otel)
 ```
 
 ---
@@ -104,7 +104,7 @@ service:
 
 ## Log query (OpenSearch DSL)
 
-Tinker queries OpenSearch using the same DSL as Elasticsearch:
+Tinkr queries OpenSearch using the same DSL as Elasticsearch:
 
 ```json
 {
@@ -124,7 +124,7 @@ Tinker queries OpenSearch using the same DSL as Elasticsearch:
 
 OTel log field mapping:
 
-| Tinker field | OTel field |
+| Tinkr field | OTel field |
 |---|---|
 | `service` | `resource.service.name` |
 | `level` | `severity` |
@@ -135,7 +135,7 @@ OTel log field mapping:
 
 ## Metrics (Prometheus)
 
-Tinker queries Prometheus using the same PromQL interface as the Grafana backend. See [Grafana backend](grafana#metrics-promql) for common metric names.
+Tinkr queries Prometheus using the same PromQL interface as the Grafana backend. See [Grafana backend](grafana#metrics-promql) for common metric names.
 
 For OTel SDK metrics, names follow the semantic conventions:
 
@@ -151,7 +151,7 @@ rate(rpc_server_duration_bucket[5m])
 
 ## Distributed tracing (OpenSearch)
 
-Tinker queries the `otel-traces-*` index for root spans (spans where `parentSpanId` is empty):
+Tinkr queries the `otel-traces-*` index for root spans (spans where `parentSpanId` is empty):
 
 ```json
 {

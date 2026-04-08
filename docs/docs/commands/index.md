@@ -16,7 +16,7 @@ tinker [global-options] <command> [command-options]
 | Flag | Description |
 |---|---|
 | `--profile TEXT` | Use a named profile from `~/.tinkr/config.toml` (default: `default`) |
-| `--server TEXT` | Override the Tinker server URL |
+| `--server TEXT` | Override the Tinkr server URL |
 | `--token TEXT` | Override the API token |
 | `--json` | Emit raw JSON instead of formatted output |
 | `--help` | Show help and exit |

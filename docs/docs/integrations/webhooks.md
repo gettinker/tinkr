@@ -5,7 +5,7 @@ title: Webhooks
 
 # Webhook and Callback Integration
 
-Tinker can send anomaly alerts to any HTTP endpoint — PagerDuty, Opsgenie, custom receivers, or your own alerting pipeline.
+Tinkr can send anomaly alerts to any HTTP endpoint — PagerDuty, Opsgenie, custom receivers, or your own alerting pipeline.
 
 ---
 
@@ -40,7 +40,7 @@ OPSGENIE_API_KEY=GenieKey XXXX
 
 ## Webhook payload
 
-Tinker sends a `POST` with `Content-Type: application/json`:
+Tinkr sends a `POST` with `Content-Type: application/json`:
 
 ```json
 {
@@ -104,7 +104,7 @@ The `--destination` flag overrides the webhook URL for notifiers that support it
 
 ## PagerDuty integration
 
-Tinker's webhook payload maps cleanly to PagerDuty Events API v2:
+Tinkr's webhook payload maps cleanly to PagerDuty Events API v2:
 
 ```python title="Custom PagerDuty adapter (example)"
 import httpx
@@ -133,7 +133,7 @@ async def forward_to_pagerduty(tinker_payload: dict):
 
 ## REST API (direct access)
 
-You can call the Tinker server directly from any system:
+You can call the Tinkr server directly from any system:
 
 ```bash
 # Detect anomalies
@@ -162,7 +162,7 @@ Interactive API docs: `https://tinker.acme.internal/docs`
 
 ## Claude Code (remote MCP)
 
-Add Tinker as an MCP server in `.claude/settings.json` to give Claude Code direct access to your observability tools:
+Add Tinkr as an MCP server in `.claude/settings.json` to give Claude Code direct access to your observability tools:
 
 ```json title=".claude/settings.json"
 {

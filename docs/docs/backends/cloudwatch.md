@@ -22,7 +22,7 @@ The backend uses the standard AWS credential chain (`boto3` / `botocore`):
 3. Environment variables (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) — avoid in production
 4. `~/.aws/credentials` — local development with `aws configure`
 
-**No credentials go in the Tinker config.** Attach the IAM role to your ECS task or EC2 instance.
+**No credentials go in the Tinkr config.** Attach the IAM role to your ECS task or EC2 instance.
 
 ---
 
@@ -90,7 +90,7 @@ repo          = "acme/payments"
 
 ## Log query
 
-Tinker queries CloudWatch Logs Insights:
+Tinkr queries CloudWatch Logs Insights:
 
 ```sql
 fields @timestamp, @message, @logStream
@@ -106,7 +106,7 @@ Log groups matching `CLOUDWATCH_LOG_GROUP_PREFIX` are queried. If no prefix is s
 
 ## Metrics
 
-Tinker calls `cloudwatch:GetMetricData` with the metric name as a dimension value. Common CloudWatch metric namespaces:
+Tinkr calls `cloudwatch:GetMetricData` with the metric name as a dimension value. Common CloudWatch metric namespaces:
 
 | Service | Namespace | Metric |
 |---|---|---|
@@ -125,7 +125,7 @@ X-Ray must be enabled in your application:
 - **Lambda**: Enable active tracing in the function configuration
 - **SDK**: Add `aws-xray-sdk` to your application
 
-Tinker calls `xray:GetTraceSummaries` for the time window, then `xray:BatchGetTraces` to fetch span details.
+Tinkr calls `xray:GetTraceSummaries` for the time window, then `xray:BatchGetTraces` to fetch span details.
 
 ---
 

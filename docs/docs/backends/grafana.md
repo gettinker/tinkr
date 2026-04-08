@@ -22,7 +22,7 @@ TINKR_BACKEND=grafana
 | Tempo | Distributed tracing | 3200 |
 | Grafana UI | Visualization | 3000 |
 
-All four are included in the Tinker Docker Compose stack.
+All four are included in the Tinkr Docker Compose stack.
 
 ---
 
@@ -51,13 +51,13 @@ tempo_url      = "env:GRAFANA_TEMPO_URL"
 
 ## Log query (LogQL)
 
-Tinker constructs LogQL queries against Loki:
+Tinkr constructs LogQL queries against Loki:
 
 ```logql
 {app="payments-api"} |= "ERROR" | json | line_format "{{.level}} {{.message}}"
 ```
 
-The `app` label must match your Loki label configuration. Tinker uses the service name as the label value.
+The `app` label must match your Loki label configuration. Tinkr uses the service name as the label value.
 
 ### Label configuration
 
@@ -77,13 +77,13 @@ scrape_configs:
 
 ## Metrics (PromQL)
 
-Tinker queries Prometheus using PromQL:
+Tinkr queries Prometheus using PromQL:
 
 ```promql
 rate(http_requests_total{job="payments-api"}[5m])
 ```
 
-The service name is matched against the `job` label. Ensure your scrape config sets the `job` label to match the Tinker service name.
+The service name is matched against the `job` label. Ensure your scrape config sets the `job` label to match the Tinkr service name.
 
 ### Common Prometheus metrics
 
@@ -105,7 +105,7 @@ process_resident_memory_bytes
 
 ## Distributed tracing (Tempo)
 
-Tinker queries Tempo's HTTP API to search traces:
+Tinkr queries Tempo's HTTP API to search traces:
 
 ```http
 GET /api/search?service.name=payments-api&start=1712498400&end=1712502000
@@ -130,10 +130,10 @@ exporter = OTLPSpanExporter(endpoint="http://tempo:4317", insecure=True)
 
 ## Local development
 
-Run Tinker locally with Loki + Prometheus + Grafana using Docker:
+Run Tinkr locally with Loki + Prometheus + Grafana using Docker:
 
 ```bash
-# Pull and run Tinker
+# Pull and run Tinkr
 docker run -d --name tinker -p 8000:8000 \
   -e ANTHROPIC_API_KEY=sk-ant-... \
   -e TINKR_BACKEND=grafana \

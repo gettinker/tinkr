@@ -5,7 +5,7 @@ title: Slack Bot
 
 # Slack Integration
 
-Tinker's Slack bot lets your team run observability commands and approve fixes directly from Slack — no terminal access required.
+Tinkr's Slack bot lets your team run observability commands and approve fixes directly from Slack — no terminal access required.
 
 :::info Bot not in channel?
 If you see `not_in_channel` errors, invite the bot to the target channel: `/invite @tinker`
@@ -18,7 +18,7 @@ If you see `not_in_channel` errors, invite the bot to the target channel: `/invi
 ### 1. Create a Slack app
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
-2. Name it `Tinker` and select your workspace
+2. Name it `Tinkr` and select your workspace
 
 ### 2. Configure OAuth scopes
 
@@ -135,7 +135,7 @@ tinkr watch start payments-api --notifier default --destination "#sre-alerts"
 ### Alert message format
 
 ```
-*Tinker Watch* — `payments-api`  [watch-a3f2b1c4]
+*Tinkr Watch* — `payments-api`  [watch-a3f2b1c4]
 
 • *HIGH* `error_count` — 847 errors in 10m (threshold: 10)
 • *MEDIUM* `latency_p99` — 2.4s avg (threshold: 1s)

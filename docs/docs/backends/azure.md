@@ -78,7 +78,7 @@ resource_group  = "prod-rg"
 
 ## Log query (KQL)
 
-Tinker queries the Log Analytics workspace using KQL:
+Tinkr queries the Log Analytics workspace using KQL:
 
 ```kql
 AppTraces
@@ -104,7 +104,7 @@ Severity mapping:
 
 ## Metrics
 
-Tinker calls the Azure Monitor Metrics REST API to fetch time series data. Common metrics:
+Tinkr calls the Azure Monitor Metrics REST API to fetch time series data. Common metrics:
 
 | Resource type | Metric |
 |---|---|
@@ -117,7 +117,7 @@ Tinker calls the Azure Monitor Metrics REST API to fetch time series data. Commo
 
 ## Distributed tracing (Application Insights)
 
-Application Insights must be connected to your Log Analytics workspace. Tinker queries the `AppRequests` table:
+Application Insights must be connected to your Log Analytics workspace. Tinkr queries the `AppRequests` table:
 
 ```kql
 AppRequests

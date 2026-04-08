@@ -5,7 +5,7 @@ title: Azure
 
 # Deploying on Azure
 
-Tinker uses Managed Identity — no client secrets needed in production.
+Tinkr uses Managed Identity — no client secrets needed in production.
 
 ---
 

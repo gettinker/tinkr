@@ -42,18 +42,18 @@ If `pip install` fails with "externally managed environment", use `uv tool insta
 
 ## Run the server
 
-The CLI is a thin client — it talks to the Tinker server. Run the server on any machine that has cloud access (EC2 with an IAM role, Cloud Run with Workload Identity, your laptop, etc.):
+The CLI is a thin client — it talks to the Tinkr server. Run the server on any machine that has cloud access (EC2 with an IAM role, Cloud Run with Workload Identity, your laptop, etc.):
 
 ```bash
 tinkr-server init    # first-time setup wizard
-tinkr-server         # start on :8000
+tinkr-server start   # start on :8000
 ```
 
 Then connect the CLI from any machine:
 
 ```bash
 tinkr init
-# Tinker server URL [http://localhost:8000]: https://tinker.acme.internal
+# Tinkr server URL [http://localhost:8000]: https://tinkr.acme.internal
 # API token: <paste key from wizard>
 ```
 
@@ -66,13 +66,12 @@ If you want to modify the code or run the latest unreleased version:
 ```bash
 git clone https://github.com/gettinker/tinkr
 cd tinkr
-cd tinker
 
 # Install all deps (including dev deps)
 uv sync
 
 # Run the server directly
-TINKR_BACKEND=cloudwatch uv run tinkr-server
+TINKR_BACKEND=cloudwatch uv run tinkr-server start
 
 # Or install the CLI globally as editable
 uv tool install --editable .
@@ -86,15 +85,14 @@ tinkr --version
 ```bash
 git clone https://github.com/gettinker/tinkr
 cd tinkr
-cd tinker
-docker build -t tinker:local .
+docker build -t tinkr:local .
 
 docker run -d \
-  --name tinker \
+  --name tinkr \
   -p 8000:8000 \
   --env-file ~/.tinkr/.env \
   -v ~/.tinkr:/root/.tinkr \
-  tinker:local
+  tinkr:local
 ```
 
 See [Docker / Self-hosted](./deployment/docker.md) for Kubernetes manifests and full `.env` reference.

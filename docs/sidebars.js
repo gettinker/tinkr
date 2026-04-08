@@ -13,13 +13,28 @@ const sidebars = {
     },
     {
       type: 'category',
+      label: 'Backends',
+      collapsed: false,
+      items: [
+        'backends/index',
+        'backends/cloudwatch',
+        'backends/gcp',
+        'backends/azure',
+        'backends/grafana',
+        'backends/datadog',
+        'backends/elastic',
+        'backends/otel',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Deployment',
       collapsed: false,
       items: [
+        'deployment/docker',
         'deployment/aws',
         'deployment/gcp',
         'deployment/azure',
-        'deployment/docker',
       ],
     },
     {
@@ -31,6 +46,11 @@ const sidebars = {
         'integrations/slack',
         'integrations/webhooks',
       ],
+    },
+    {
+      type: 'doc',
+      id: 'configuration',
+      label: 'Configuration Reference',
     },
     {
       type: 'category',
@@ -52,26 +72,6 @@ const sidebars = {
         'commands/deploy',
         'commands/profile',
       ],
-    },
-    {
-      type: 'category',
-      label: 'Backends',
-      collapsed: false,
-      items: [
-        'backends/index',
-        'backends/cloudwatch',
-        'backends/gcp',
-        'backends/azure',
-        'backends/grafana',
-        'backends/datadog',
-        'backends/elastic',
-        'backends/otel',
-      ],
-    },
-    {
-      type: 'doc',
-      id: 'configuration',
-      label: 'Configuration Reference',
     },
     {
       type: 'doc',

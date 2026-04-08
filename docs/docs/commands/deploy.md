@@ -98,7 +98,7 @@ Deploy correlation — payments-api (last 7d)
 
 ## How deploy detection works
 
-Tinker uses the **GitHub Commits API** to list commits for a service's configured repository path. The service-to-repo mapping is configured in your profile:
+Tinkr uses the **GitHub Commits API** to list commits for a service's configured repository path. The service-to-repo mapping is configured in your profile:
 
 ```toml title="~/.tinkr/config.toml"
 [github]
@@ -112,7 +112,7 @@ repo = "acme/payments"
 repo = "acme/auth"
 ```
 
-If a service has no `repo` configured, Tinker falls back to `[github].default_repo`.
+If a service has no `repo` configured, Tinkr falls back to `[github].default_repo`.
 
 ## Correlation window
 

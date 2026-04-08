@@ -5,7 +5,7 @@ title: GitHub
 
 # GitHub Integration
 
-The GitHub integration lets Tinker read your source code during investigations and open pull requests when a fix is approved. It is required for the `fix` and `approve` REPL commands and the `rca` command's code context feature.
+The GitHub integration lets Tinkr read your source code during investigations and open pull requests when a fix is approved. It is required for the `fix` and `approve` REPL commands and the `rca` command's code context feature.
 
 ---
 
@@ -27,7 +27,7 @@ The GitHub integration lets Tinker read your source code during investigations a
 
 Go to **GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**.
 
-Select the repository (or repositories) Tinker should access and grant:
+Select the repository (or repositories) Tinkr should access and grant:
 
 | Permission | Level |
 |---|---|
@@ -66,13 +66,13 @@ repo          = "acme/auth"
 resource_type = "lambda"
 ```
 
-When a service has no `repo` configured, Tinker falls back to `[github].default_repo`.
+When a service has no `repo` configured, Tinkr falls back to `[github].default_repo`.
 
 ---
 
 ## How code investigation works
 
-During `explain` and `fix`, Tinker:
+During `explain` and `fix`, Tinkr:
 
 1. **Classifies the error** — `transient`, `logic_bug`, `config_error`, or `dependency_down`
 2. **Extracts stack frame file paths** from the log summary
@@ -88,7 +88,7 @@ The LLM never receives more than the relevant code context — full files are ne
 
 When you type `approve` in the `tinkr investigate` REPL:
 
-1. Tinker creates a branch named `tinker/fix-{uuid}` on the configured repo
+1. Tinkr creates a branch named `tinkr/fix-{uuid}` on the configured repo
 2. Applies the proposed file changes (the exact `old_string → new_string` patch)
 3. Commits with the explanation as the commit message
 4. Opens a PR targeting the default branch

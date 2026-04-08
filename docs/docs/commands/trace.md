@@ -76,7 +76,7 @@ Traces for payments-api (last 1h, 20 results)
 
 ## Tracing requirements
 
-Tracing must be enabled in your application. Tinker reads from the tracing backend — it does not instrument your code.
+Tracing must be enabled in your application. Tinkr reads from the tracing backend — it does not instrument your code.
 
 - **Grafana**: Configure your app to send spans to Tempo
 - **CloudWatch**: Enable X-Ray tracing in your ECS task definition / Lambda configuration

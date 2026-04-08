@@ -5,7 +5,7 @@ title: Configuration Reference
 
 # Configuration Reference
 
-Tinker uses two configuration files, both located in `~/.tinkr/`:
+Tinkr uses two configuration files, both located in `~/.tinkr/`:
 
 | File | Purpose |
 |---|---|
@@ -23,7 +23,7 @@ The `.env` file is never committed to source control. Values referenced as `"env
 # Server connection (CLI side)
 # ──────────────────────────────────────────────
 [server]
-url   = "http://localhost:8000"   # Tinker server URL
+url   = "http://localhost:8000"   # Tinkr server URL
 token = "env:TINKR_API_TOKEN"    # Raw API token (not the hash)
 
 
@@ -187,7 +187,7 @@ DISCORD_OPS_WEBHOOK_URL=https://discord.com/api/webhooks/1234567890/xxxx
 
 ## Environment variable precedence
 
-For server-side configuration, Tinker reads variables in this order:
+For server-side configuration, Tinkr reads variables in this order:
 
 1. Process environment (injected by cloud secrets manager at container start)
 2. `.env` file at `~/.tinkr/.env`
@@ -216,20 +216,21 @@ The active profile is resolved in this order:
 
 ---
 
-## `tinker init` wizard
+## Setup wizards
 
-The interactive setup wizard generates `config.toml` and `.env` from prompts:
+The interactive wizards generate `config.toml` and `.env` from prompts:
 
 ```bash
-# Initialize CLI (client side)
-tinker init cli
+# Set up the server (run on the machine with cloud access)
+tinkr-server init
 
-# Initialize server config
-tinker init server
+# Connect the CLI to a running server (run on developer machines)
+tinkr init
 ```
 
-`tinker init server` asks for:
-1. Backend type
+`tinkr-server init` asks for:
+1. LLM provider and API key
 2. Slack tokens (optional)
 3. GitHub token (optional)
-4. First API key
+4. Server API key (for CLI auth)
+5. Cloud backend and profile

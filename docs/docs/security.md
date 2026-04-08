@@ -5,14 +5,14 @@ title: Security
 
 # Security Model
 
-Tinker is designed with a defense-in-depth approach. This page explains the trust boundaries, credential model, and the guardrails that prevent accidental or unauthorized actions.
+Tinkr is designed with a defense-in-depth approach. This page explains the trust boundaries, credential model, and the guardrails that prevent accidental or unauthorized actions.
 
 ---
 
 ## Trust model
 
 ```
-Developer laptop         Tinker Server              Cloud APIs
+Developer laptop         Tinkr Server              Cloud APIs
      │                        │                          │
      │  Bearer <api-key>       │                          │
      ├───────────────────────► │  IAM / Workload          │
@@ -22,7 +22,7 @@ Developer laptop         Tinker Server              Cloud APIs
      │◄───────────────────────┤                          │
 ```
 
-**The Tinker server is the single point of credential trust.** The CLI and Slack bot authenticate to the server — they never talk to cloud APIs directly.
+**The Tinkr server is the single point of credential trust.** The CLI and Slack bot authenticate to the server — they never talk to cloud APIs directly.
 
 ---
 
@@ -131,7 +131,7 @@ Audit logs go to the server's stdout and are captured by your cloud's logging se
 
 ### Server exposure
 
-The Tinker server only needs to be reachable from:
+The Tinkr server only needs to be reachable from:
 - Developer workstations (CLI)
 - Slack (webhook events)
 - Claude Code (MCP over SSE)
@@ -144,13 +144,13 @@ The Tinker server only needs to be reachable from:
 
 ### TLS
 
-Always terminate TLS at the load balancer. The Tinker server itself speaks HTTP internally.
+Always terminate TLS at the load balancer. The Tinkr server itself speaks HTTP internally.
 
 ---
 
 ## Slack security
 
-Tinker verifies every Slack request using the signing secret (`SLACK_SIGNING_SECRET`). Requests with an invalid or missing `X-Slack-Signature` header are rejected with 401.
+Tinkr verifies every Slack request using the signing secret (`SLACK_SIGNING_SECRET`). Requests with an invalid or missing `X-Slack-Signature` header are rejected with 401.
 
 The signing secret is never logged.
 
@@ -167,11 +167,11 @@ The GitHub token only needs the minimum permissions to function:
 | Pull requests | Write | Open fix PRs |
 | Metadata | Read (auto) | Required by GitHub |
 
-Use a **fine-grained personal access token** scoped to the specific repositories Tinker needs. Never use a classic token with broad `repo` scope.
+Use a **fine-grained personal access token** scoped to the specific repositories Tinkr needs. Never use a classic token with broad `repo` scope.
 
 ---
 
-## What Tinker never does
+## What Tinkr never does
 
 - Never stores raw API keys — only SHA-256 hashes
 - Never sends raw log data to the LLM — always sanitized first
