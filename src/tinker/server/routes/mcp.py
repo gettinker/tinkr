@@ -7,7 +7,7 @@ Claude Code configuration (.claude/settings.json):
       "transport": "sse",
       "url": "https://tinker.your-company.internal/mcp/sse",
       "headers": {
-        "Authorization": "Bearer ${TINKER_API_TOKEN}"
+        "Authorization": "Bearer ${TINKR_API_TOKEN}"
       }
     }
   }

@@ -14,8 +14,8 @@ Supports any model string that LiteLLM understands:
   Ollama (local)    ollama/llama3
 
 Set the model in config:
-  TINKER_DEFAULT_MODEL=openrouter/anthropic/claude-sonnet-4-6
-  TINKER_DEEP_RCA_MODEL=openrouter/anthropic/claude-opus-4-6
+  TINKR_DEFAULT_MODEL=openrouter/anthropic/claude-sonnet-4-6
+  TINKR_DEEP_RCA_MODEL=openrouter/anthropic/claude-opus-4-6
 
 Set the API key for the provider you use:
   ANTHROPIC_API_KEY    for anthropic/* models

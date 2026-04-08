@@ -8,7 +8,7 @@ title: Azure Monitor
 Uses Log Analytics (KQL) for logs, Azure Monitor Metrics API for metrics, and Application Insights for distributed tracing.
 
 ```bash
-TINKER_BACKEND=azure
+TINKR_BACKEND=azure
 ```
 
 ---
@@ -146,7 +146,7 @@ See [Deploying on Azure](../deployment/azure) for Container Apps, AKS, Managed I
 ```bash
 az login
 
-export TINKER_BACKEND=azure
+export TINKR_BACKEND=azure
 export AZURE_LOG_ANALYTICS_WORKSPACE_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 export AZURE_SUBSCRIPTION_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 export AZURE_RESOURCE_GROUP=dev-rg

@@ -47,9 +47,9 @@ gcloud run deploy tinker \
   --platform managed \
   --region us-central1 \
   --service-account tinker@YOUR_PROJECT_ID.iam.gserviceaccount.com \
-  --set-env-vars TINKER_BACKEND=gcp,GCP_PROJECT_ID=YOUR_PROJECT_ID \
+  --set-env-vars TINKR_BACKEND=gcp,GCP_PROJECT_ID=YOUR_PROJECT_ID \
   --set-secrets ANTHROPIC_API_KEY=tinker-anthropic-key:latest \
-  --set-secrets TINKER_API_KEYS=tinker-api-keys:latest \
+  --set-secrets TINKR_API_KEYS=tinker-api-keys:latest \
   --allow-unauthenticated \
   --port 8000 \
   --memory 1Gi \
@@ -99,7 +99,7 @@ spec:
           ports:
             - containerPort: 8000
           env:
-            - name: TINKER_BACKEND
+            - name: TINKR_BACKEND
               value: gcp
             - name: GCP_PROJECT_ID
               value: YOUR_PROJECT_ID

@@ -9,7 +9,7 @@ What belongs here
   AWS standard env vars  — boto3 also reads AWS_PROFILE / AWS_DEFAULT_REGION
   GCP credential path    — google-auth reads GOOGLE_APPLICATION_CREDENTIALS
   Azure identity env vars — Azure SDK EnvironmentCredential reads these by name
-  TINKER_DB_PATH         — optional SQLite path override
+  TINKR_DB_PATH         — optional SQLite path override
 
 What does NOT belong here
 -------------------------
@@ -59,7 +59,7 @@ class TinkerConfig(BaseSettings):
     azure_client_secret: SecretStr | None = None
 
     # ── Internal ──────────────────────────────────────────────────────────────
-    tinker_db_path: str | None = Field(None, alias="TINKER_DB_PATH")
+    tinker_db_path: str | None = Field(None, alias="TINKR_DB_PATH")
 
 
 # Singleton — import this instead of constructing per-module

@@ -5,7 +5,7 @@ Schema
 sessions  — REPL session context (anomalies, current focus, pending fix)
 watches   — Watch tasks managed by the server (no PID — asyncio tasks, not processes)
 
-Location: ~/.tinkr/tinker.db  (overridable via TINKER_DB_PATH)
+Location: ~/.tinkr/tinker.db  (overridable via TINKR_DB_PATH)
 """
 
 from __future__ import annotations

@@ -23,12 +23,12 @@ Create `~/.tinkr/.env` with your config:
 ANTHROPIC_API_KEY=sk-ant-...
 
 # Backend — pick one that matches your observability stack
-TINKER_BACKEND=cloudwatch   # or gcp, azure, grafana, datadog, elastic, otel
+TINKR_BACKEND=cloudwatch   # or gcp, azure, grafana, datadog, elastic, otel
 
 # Auth — hashed API key for CLI users
 # Generate: python -c "import secrets; print(secrets.token_urlsafe(32))"
 # Hash:     python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" <raw>
-TINKER_API_KEYS='[{"hash":"<sha256>","subject":"alice","roles":["oncall"]}]'
+TINKR_API_KEYS='[{"hash":"<sha256>","subject":"alice","roles":["oncall"]}]'
 
 # Optional
 GITHUB_TOKEN=ghp_...
@@ -88,7 +88,7 @@ spec:
             - secretRef:
                 name: tinker-secrets
           env:
-            - name: TINKER_BACKEND
+            - name: TINKR_BACKEND
               value: cloudwatch   # set to your backend
           livenessProbe:
             httpGet:
@@ -126,7 +126,7 @@ kubectl create secret generic tinker-secrets \
 kubectl apply -f k8s/tinker.yaml
 ```
 
-Set `TINKER_BACKEND` to whichever backend your cluster has access to — see [Backends](../backends/index.md) for the full list and required environment variables per backend.
+Set `TINKR_BACKEND` to whichever backend your cluster has access to — see [Backends](../backends/index.md) for the full list and required environment variables per backend.
 
 ---
 

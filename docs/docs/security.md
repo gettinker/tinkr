@@ -43,7 +43,7 @@ The SDKs (`boto3`, `google-auth`, `DefaultAzureCredential`) discover credentials
 
 ### API keys — short strings, stored hashed
 
-Developer and bot API keys are short random strings, stored as SHA-256 hashes in `TINKER_API_KEYS`:
+Developer and bot API keys are short random strings, stored as SHA-256 hashes in `TINKR_API_KEYS`:
 
 ```bash
 # Generate

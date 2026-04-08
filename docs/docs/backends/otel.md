@@ -8,7 +8,7 @@ title: OpenTelemetry
 Uses OpenSearch for log storage, Prometheus for metrics, and OpenSearch for OTel trace storage. Best for organizations standardizing on the OpenTelemetry Collector.
 
 ```bash
-TINKER_BACKEND=otel
+TINKR_BACKEND=otel
 ```
 
 ---
@@ -24,7 +24,7 @@ OTel Collector
     └──► Prometheus (metrics)
          │
          ▼
-      Tinker (TINKER_BACKEND=otel)
+      Tinker (TINKR_BACKEND=otel)
 ```
 
 ---
@@ -212,7 +212,7 @@ The `otel` backend uses the OpenSearch client, which is compatible with OpenSear
 docker run -p 9200:9200 -e "discovery.type=single-node" \
   opensearchproject/opensearch:latest
 
-export TINKER_BACKEND=otel
+export TINKR_BACKEND=otel
 export OTEL_OPENSEARCH_URL=http://localhost:9200
 export OTEL_PROMETHEUS_URL=http://localhost:9090
 uv run tinkr-server

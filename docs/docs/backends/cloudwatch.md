@@ -8,7 +8,7 @@ title: AWS CloudWatch
 Uses CloudWatch Logs Insights for log queries, CloudWatch Metrics for time series, and AWS X-Ray for distributed tracing.
 
 ```bash
-TINKER_BACKEND=cloudwatch
+TINKR_BACKEND=cloudwatch
 ```
 
 ---
@@ -141,7 +141,7 @@ See [Deploying on AWS](../deployment/aws) for ECS Fargate task definition, IAM r
 # Configure AWS CLI
 aws configure  # or use SSO: aws sso login
 
-export TINKER_BACKEND=cloudwatch
+export TINKR_BACKEND=cloudwatch
 export AWS_REGION=us-east-1
 uv run tinkr-server
 ```

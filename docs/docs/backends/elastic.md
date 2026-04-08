@@ -8,7 +8,7 @@ title: Elastic
 Uses Elasticsearch DSL for log queries, aggregations for metrics, and Elastic APM for distributed tracing.
 
 ```bash
-TINKER_BACKEND=elastic
+TINKR_BACKEND=elastic
 ```
 
 ---
@@ -155,7 +155,7 @@ ELASTIC_API_KEY=VnVhQ2ZHY0JDZGJrZXctATxxxxxxxxxxxxxxxx==
 # Run Elasticsearch + Kibana locally
 docker run -p 9200:9200 -e "discovery.type=single-node" elasticsearch:8.x
 
-export TINKER_BACKEND=elastic
+export TINKR_BACKEND=elastic
 export ELASTIC_URL=http://localhost:9200
 export ELASTIC_USERNAME=elastic
 export ELASTIC_PASSWORD=changeme

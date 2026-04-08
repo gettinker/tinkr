@@ -24,7 +24,7 @@ Core loop: detect anomaly → query logs/metrics → correlate with source code 
 │          ──► POST /slack/events     Slack Bolt                   │
 │          ──► GET  /health                                        │
 │                                                                  │
-│  Active backend (TINKER_BACKEND env var):                        │
+│  Active backend (TINKR_BACKEND env var):                        │
 │  cloudwatch | gcp | azure | grafana | datadog | elastic | otel  │
 │                                                                  │
 │  Credentials → cloud's native identity (IAM role / Workload     │
@@ -81,7 +81,7 @@ Developer laptop        Tinker Server               AWS CloudWatch
      │◄───────────────────────┤                           │
 ```
 
-API keys are short strings stored in `TINKER_API_KEYS` (hashed with SHA-256).
+API keys are short strings stored in `TINKR_API_KEYS` (hashed with SHA-256).
 Generate one: `python -c "import secrets; print(secrets.token_urlsafe(32))"`
 
 ### Local development
@@ -89,7 +89,7 @@ Generate one: `python -c "import secrets; print(secrets.token_urlsafe(32))"`
 ```bash
 docker compose -f deploy/docker-compose.yml up
 # Starts Tinker server + Loki + Prometheus + Grafana UI
-# TINKER_BACKEND=grafana, no cloud credentials needed
+# TINKR_BACKEND=grafana, no cloud credentials needed
 ```
 
 ---
@@ -97,7 +97,7 @@ docker compose -f deploy/docker-compose.yml up
 ## Backends
 
 All backends implement `ObservabilityBackend` (ABC in `src/tinker/backends/base.py`).
-Selected by `TINKER_BACKEND` env var. The agent never imports a specific backend class.
+Selected by `TINKR_BACKEND` env var. The agent never imports a specific backend class.
 
 | Backend | File | Logs | Metrics | Traces | Auth |
 |---|---|---|---|---|---|
@@ -141,13 +141,13 @@ Uncomment the `tinker` remote block and comment out the individual local servers
     "tinker": {
       "transport": "sse",
       "url": "https://tinker.your-company.internal/mcp/sse",
-      "headers": { "Authorization": "Bearer ${TINKER_API_TOKEN}" }
+      "headers": { "Authorization": "Bearer ${TINKR_API_TOKEN}" }
     }
   }
 }
 ```
 
-`TINKER_API_TOKEN` is the raw API key (not the hash). Set it in your shell profile or `.env`.
+`TINKR_API_TOKEN` is the raw API key (not the hash). Set it in your shell profile or `.env`.
 
 ### Tool naming conventions
 
@@ -205,7 +205,7 @@ Use `${ENV_VAR}` substitution in `settings.json`. Set values in:
 Never bypass the `ApprovalRequired` guardrail — use `MockApproval` in tests.
 
 ### Backends are selected at server start, not per-request
-`TINKER_BACKEND` is read once at startup. Users deploy one Tinker instance per cloud account.
+`TINKR_BACKEND` is read once at startup. Users deploy one Tinker instance per cloud account.
 For multi-cloud: deploy multiple instances, each with its own backend config.
 
 ### Secrets never reach the LLM
@@ -226,7 +226,7 @@ from ALL data before it is included in a prompt or returned from an MCP tool.
 ```bash
 uv sync
 cp .env.example .env  # fill in ANTHROPIC_API_KEY + backend vars
-TINKER_BACKEND=grafana uv run tinker-server
+TINKR_BACKEND=grafana uv run tinker-server
 # or with docker:
 docker compose -f deploy/docker-compose.yml up
 ```
@@ -234,8 +234,8 @@ docker compose -f deploy/docker-compose.yml up
 ### Run the CLI against a deployed server
 
 ```bash
-export TINKER_SERVER_URL=https://tinker.your-company.internal
-export TINKER_API_TOKEN=<your-raw-api-key>
+export TINKR_SERVER_URL=https://tinker.your-company.internal
+export TINKR_API_TOKEN=<your-raw-api-key>
 tinker analyze payments-api --since 1h
 ```
 
@@ -248,7 +248,7 @@ Edit `.claude/settings.json`:
     "tinker": {
       "transport": "sse",
       "url": "https://tinker.your-company.internal/mcp/sse",
-      "headers": { "Authorization": "Bearer ${TINKER_API_TOKEN}" }
+      "headers": { "Authorization": "Bearer ${TINKR_API_TOKEN}" }
     }
   }
 }
@@ -267,7 +267,7 @@ tinker-cloudwatch-mcp  # starts on stdio, send JSON-RPC manually
 # Generate
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 
-# Hash (store the hash in TINKER_API_KEYS, give the raw key to the client)
+# Hash (store the hash in TINKR_API_KEYS, give the raw key to the client)
 python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" <raw-key>
 ```
 

@@ -72,7 +72,7 @@ cd tinker
 uv sync
 
 # Run the server directly
-TINKER_BACKEND=cloudwatch uv run tinkr-server
+TINKR_BACKEND=cloudwatch uv run tinkr-server
 
 # Or install the CLI globally as editable
 uv tool install --editable .
@@ -134,14 +134,14 @@ All per-user state lives in `~/.tinkr/`:
 
 | Variable | Description | Default |
 |---|---|---|
-| `TINKER_BACKEND` | Active backend | `cloudwatch` |
+| `TINKR_BACKEND` | Active backend | `cloudwatch` |
 | `ANTHROPIC_API_KEY` | Anthropic API key | — |
-| `TINKER_API_KEYS` | JSON array of hashed API keys | `[]` |
-| `TINKER_SERVER_URL` | Server URL (CLI override) | `http://localhost:8000` |
-| `TINKER_API_TOKEN` | API token (CLI override) | — |
-| `TINKER_SERVER_PORT` | Bind port | `8000` |
-| `TINKER_SERVER_HOST` | Bind host | `0.0.0.0` |
-| `TINKER_DB_PATH` | SQLite path | `~/.tinkr/tinker.db` |
+| `TINKR_API_KEYS` | JSON array of hashed API keys | `[]` |
+| `TINKR_SERVER_URL` | Server URL (CLI override) | `http://localhost:8000` |
+| `TINKR_API_TOKEN` | API token (CLI override) | — |
+| `TINKR_SERVER_PORT` | Bind port | `8000` |
+| `TINKR_SERVER_HOST` | Bind host | `0.0.0.0` |
+| `TINKR_DB_PATH` | SQLite path | `~/.tinkr/tinker.db` |
 
 See the [Configuration Reference](/configuration) for the full list.
 
@@ -153,7 +153,7 @@ See the [Configuration Reference](/configuration) for the full list.
 # Generate a raw key (give this to CLI users)
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 
-# Hash it (store the hash in TINKER_API_KEYS)
+# Hash it (store the hash in TINKR_API_KEYS)
 python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" <raw-key>
 ```
 

@@ -26,7 +26,7 @@ Open-source AI-powered observability and incident response agent. Connects to yo
 │  Credentials → IAM role / Workload Identity / Managed Identity   │
 │  Zero long-lived cloud keys on the server.                       │
 └───────────────────────────────┬──────────────────────────────────┘
-                                │  API key  (TINKER_API_TOKEN)
+                                │  API key  (TINKR_API_TOKEN)
                    ┌────────────┼──────────────────┐
                    ▼            ▼                  ▼
                   CLI          Claude Code        Slack Bot
@@ -619,7 +619,7 @@ tinkr-server           # or: nohup tinkr-server start start &
 gcloud run deploy tinkr \
   --image gcr.io/your-project/tinker-agent \
   --service-account tinkr@your-project.iam.gserviceaccount.com \
-  --set-env-vars TINKER_BACKEND=gcp,GCP_PROJECT_ID=your-project
+  --set-env-vars TINKR_BACKEND=gcp,GCP_PROJECT_ID=your-project
 ```
 
 Required roles: `roles/logging.viewer` + `roles/monitoring.viewer`
@@ -636,7 +636,7 @@ az role assignment create --assignee <MANAGED_IDENTITY_PRINCIPAL_ID> \
 ### Self-hosted / Docker
 
 ```bash
-cp .env.example .env      # fill in TINKER_BACKEND + credentials
+cp .env.example .env      # fill in TINKR_BACKEND + credentials
 docker compose -f deploy/docker-compose.yml up -d
 # Starts Tinkr server + Loki + Prometheus + Grafana for local testing
 ```
@@ -663,7 +663,7 @@ Once the server is running, add it as a remote MCP server in `.claude/settings.j
     "tinker": {
       "transport": "sse",
       "url": "https://tinker.your-company.internal/mcp/sse",
-      "headers": { "Authorization": "Bearer ${TINKER_API_TOKEN}" }
+      "headers": { "Authorization": "Bearer ${TINKR_API_TOKEN}" }
     }
   }
 }
@@ -952,8 +952,8 @@ DISCORD_DEV_WEBHOOK_URL=https://discord.com/api/webhooks/...
 | `~/.tinkr/.env` | Server secrets — written by `tinkr-server init`, auto-loaded by `tinkr-server` |
 | `~/.tinkr/config.toml` | Server structure config — written by `tinkr-server init` |
 | `~/.tinkr/tinker.db` | SQLite — REPL sessions, watch state, alert rules |
-| `TINKER_SERVER_URL` | Override server URL (env var takes priority over `~/.tinkr/config`) |
-| `TINKER_API_TOKEN` | Override API token (env var takes priority over `~/.tinkr/config`) |
+| `TINKR_SERVER_URL` | Override server URL (env var takes priority over `~/.tinkr/config`) |
+| `TINKR_API_TOKEN` | Override API token (env var takes priority over `~/.tinkr/config`) |
 
 ### Fallback: `.env`-only mode
 
@@ -961,11 +961,11 @@ If `config.toml` does not exist, the server falls back to env var configuration:
 
 | Variable | Description | Default |
 |---|---|---|
-| `TINKER_BACKEND` | Active backend | `cloudwatch` |
+| `TINKR_BACKEND` | Active backend | `cloudwatch` |
 | `ANTHROPIC_API_KEY` | or `OPENROUTER_API_KEY` / `OPENAI_API_KEY` / `GROQ_API_KEY` | — |
-| `TINKER_API_KEYS` | JSON array of hashed keys | `[]` |
-| `TINKER_SERVER_PORT` | Bind port | `8000` |
-| `TINKER_SERVER_HOST` | Bind host | `0.0.0.0` |
+| `TINKR_API_KEYS` | JSON array of hashed keys | `[]` |
+| `TINKR_SERVER_PORT` | Bind port | `8000` |
+| `TINKR_SERVER_HOST` | Bind host | `0.0.0.0` |
 
 See [.env.example](.env.example) for the full env var reference.
 

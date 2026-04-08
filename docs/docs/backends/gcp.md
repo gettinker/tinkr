@@ -8,7 +8,7 @@ title: Google Cloud
 Uses Cloud Logging for log queries, Cloud Monitoring for metrics, and Cloud Trace for distributed tracing.
 
 ```bash
-TINKER_BACKEND=gcp
+TINKR_BACKEND=gcp
 ```
 
 ---
@@ -127,7 +127,7 @@ See [Deploying on GCP](../deployment/gcp) for Cloud Run, GKE, Workload Identity,
 ```bash
 gcloud auth application-default login
 
-export TINKER_BACKEND=gcp
+export TINKR_BACKEND=gcp
 export GCP_PROJECT_ID=acme-dev-123456
 uv run tinkr-server
 ```

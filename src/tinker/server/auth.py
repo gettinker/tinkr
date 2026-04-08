@@ -4,12 +4,12 @@ Two schemes are supported:
 
 1. API Key (simple, for CLI and service-to-service)
    Header: Authorization: Bearer <api-key>
-   Keys are stored as bcrypt hashes in TINKER_API_KEYS env var (comma-separated).
+   Keys are stored as bcrypt hashes in TINKR_API_KEYS env var (comma-separated).
 
 2. Short-lived JWT (for human users authenticating via SSO/OIDC)
    Header: Authorization: Bearer <jwt>
    Issued by your IdP; Tinker validates signature + expiry + `tinker` audience claim.
-   Set TINKER_JWT_JWKS_URL to your IdP's JWKS endpoint.
+   Set TINKR_JWT_JWKS_URL to your IdP's JWKS endpoint.
 
 Deployment notes
 ----------------
@@ -56,13 +56,13 @@ class AuthContext:
 # ── API key validation ────────────────────────────────────────────────────────
 
 def _load_api_keys() -> dict[str, dict]:
-    """Load API keys from config.toml [auth] (preferred) or TINKER_API_KEYS env var (legacy).
+    """Load API keys from config.toml [auth] (preferred) or TINKR_API_KEYS env var (legacy).
 
     config.toml format:
         [auth]
         api_keys = [{hash = "<sha256-hex>", subject = "cli-mohit", roles = ["oncall"]}]
 
-    Legacy TINKER_API_KEYS format (JSON string in .env):
+    Legacy TINKR_API_KEYS format (JSON string in .env):
         [{"hash": "<sha256-hex>", "subject": "cli-mohit", "roles": ["sre"]}]
     """
     import json
@@ -77,9 +77,9 @@ def _load_api_keys() -> dict[str, dict]:
     except Exception:
         pass
 
-    # Fall back to TINKER_API_KEYS env var
+    # Fall back to TINKR_API_KEYS env var
     import os
-    raw = os.environ.get("TINKER_API_KEYS", "[]")
+    raw = os.environ.get("TINKR_API_KEYS", "[]")
     try:
         entries = json.loads(raw)
         return {entry["hash"]: entry for entry in entries}
@@ -110,8 +110,8 @@ def _validate_api_key(token: str) -> AuthContext | None:
 # ── JWT validation ────────────────────────────────────────────────────────────
 
 def _validate_jwt(token: str) -> AuthContext | None:
-    jwks_url = os.environ.get("TINKER_JWT_JWKS_URL")
-    audience = os.environ.get("TINKER_JWT_AUDIENCE", "tinker")
+    jwks_url = os.environ.get("TINKR_JWT_JWKS_URL")
+    audience = os.environ.get("TINKR_JWT_AUDIENCE", "tinker")
     if not jwks_url:
         return None
 

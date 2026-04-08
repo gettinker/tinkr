@@ -8,7 +8,7 @@ title: Datadog
 Uses the Datadog Logs API v2 for logs, Metrics API v1 for time series, and APM Traces API v2 for distributed tracing.
 
 ```bash
-TINKER_BACKEND=datadog
+TINKR_BACKEND=datadog
 ```
 
 ---
@@ -138,7 +138,7 @@ Traces are automatically correlated with logs when `DD_LOGS_INJECTION=true` is s
 ## Local development
 
 ```bash
-export TINKER_BACKEND=datadog
+export TINKR_BACKEND=datadog
 export DD_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 export DD_APP_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 uv run tinkr-server

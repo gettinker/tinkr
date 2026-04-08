@@ -2,11 +2,11 @@
 
 Resolution order for server URL:
   1. Explicit override passed to resolve()
-  2. TINKER_SERVER_URL env var
+  2. TINKR_SERVER_URL env var
   3. url in ~/.tinkr/config (TOML)
   4. Fallback: http://localhost:8000
 
-The API token is always read from the TINKER_API_TOKEN env var.
+The API token is always read from the TINKR_API_TOKEN env var.
 ~/.tinkr/config stores the URL only — never secrets.
 
 ~/.tinkr/config format
@@ -24,7 +24,7 @@ from pathlib import Path
 @dataclass
 class ServerConfig:
     url: str
-    api_key_env: str = "TINKER_API_TOKEN"
+    api_key_env: str = "TINKR_API_TOKEN"
 
     @property
     def api_key(self) -> str:
@@ -43,7 +43,7 @@ def resolve(url_override: str | None = None) -> ServerConfig:
     cfg = _read_config()
     url = (
         url_override
-        or os.environ.get("TINKER_SERVER_URL", "")
+        or os.environ.get("TINKR_SERVER_URL", "")
         or cfg.get("url", "")
         or "http://localhost:8000"
     )

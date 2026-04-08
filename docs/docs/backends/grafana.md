@@ -8,7 +8,7 @@ title: Grafana Stack
 Uses Loki (LogQL) for logs, Prometheus (PromQL) for metrics, and Grafana Tempo for distributed tracing. The best choice for self-hosted environments and local development.
 
 ```bash
-TINKER_BACKEND=grafana
+TINKR_BACKEND=grafana
 ```
 
 ---
@@ -136,7 +136,7 @@ Run Tinker locally with Loki + Prometheus + Grafana using Docker:
 # Pull and run Tinker
 docker run -d --name tinker -p 8000:8000 \
   -e ANTHROPIC_API_KEY=sk-ant-... \
-  -e TINKER_BACKEND=grafana \
+  -e TINKR_BACKEND=grafana \
   -e GRAFANA_LOKI_URL=http://loki:3100 \
   -e GRAFANA_PROMETHEUS_URL=http://prometheus:9090 \
   -v ~/.tinkr:/root/.tinkr \
@@ -156,7 +156,7 @@ git clone https://github.com/gettinker/tinkr
 cd tinkr
 cd tinker
 uv sync
-TINKER_BACKEND=grafana uv run tinker-server
+TINKR_BACKEND=grafana uv run tinker-server
 ```
 
 ---

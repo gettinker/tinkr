@@ -24,7 +24,7 @@ The `.env` file is never committed to source control. Values referenced as `"env
 # ──────────────────────────────────────────────
 [server]
 url   = "http://localhost:8000"   # Tinker server URL
-token = "env:TINKER_API_TOKEN"    # Raw API token (not the hash)
+token = "env:TINKR_API_TOKEN"    # Raw API token (not the hash)
 
 
 # ──────────────────────────────────────────────
@@ -132,9 +132,9 @@ prometheus_url = "env:OTEL_PROMETHEUS_URL"
 ANTHROPIC_API_KEY=sk-ant-...
 
 # ── Server ───────────────────────────────────
-TINKER_SERVER_URL=https://tinker.acme.internal
-TINKER_API_TOKEN=<raw-token>        # CLI uses this
-TINKER_API_KEYS='[{"hash":"<sha256>","subject":"alice","roles":["oncall"]}]'
+TINKR_SERVER_URL=https://tinker.acme.internal
+TINKR_API_TOKEN=<raw-token>        # CLI uses this
+TINKR_API_KEYS='[{"hash":"<sha256>","subject":"alice","roles":["oncall"]}]'
 
 # ── Backend: Grafana ─────────────────────────
 GRAFANA_LOKI_URL=http://loki:3100
@@ -210,7 +210,7 @@ For server-side configuration, Tinker reads variables in this order:
 The active profile is resolved in this order:
 
 1. `--profile` flag on the command
-2. `TINKER_PROFILE` environment variable
+2. `TINKR_PROFILE` environment variable
 3. Profile with `active = true` in `config.toml`
 4. Profile named `default`
 

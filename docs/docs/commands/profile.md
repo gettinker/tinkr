@@ -118,7 +118,7 @@ project_id = "acme-staging"
 ## Active profile resolution order
 
 1. `--profile` flag on the command line
-2. `TINKER_PROFILE` environment variable
+2. `TINKR_PROFILE` environment variable
 3. The profile marked `active = true` in `config.toml`
 4. `default` profile
 

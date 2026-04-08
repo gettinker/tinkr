@@ -33,7 +33,7 @@ title: Quick Start
 │  Credentials → IAM role / Workload Identity / Managed Identity  │
 │  Zero long-lived cloud keys on the server.                      │
 └─────────────────────────────┬───────────────────────────────────┘
-                              │  API key  (TINKER_API_TOKEN)
+                              │  API key  (TINKR_API_TOKEN)
                  ┌────────────┼──────────────────┐
                  ▼            ▼                  ▼
                 CLI          Claude Code        Slack Bot

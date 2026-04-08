@@ -7,7 +7,7 @@ Supports any model string that LiteLLM understands:
   groq/llama-3.1-70b-versatile
   ollama/llama3
 
-Set TINKER_DEFAULT_MODEL and TINKER_DEEP_RCA_MODEL in your environment.
+Set TINKR_DEFAULT_MODEL and TINKR_DEEP_RCA_MODEL in your environment.
 """
 
 from __future__ import annotations

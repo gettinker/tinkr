@@ -39,10 +39,10 @@ Set up a minimal `.env`:
 ```bash
 cat > ~/.tinkr/.env <<EOF
 ANTHROPIC_API_KEY=sk-ant-...
-TINKER_BACKEND=grafana
+TINKR_BACKEND=grafana
 GRAFANA_LOKI_URL=http://localhost:3100
 GRAFANA_PROMETHEUS_URL=http://localhost:9090
-TINKER_API_KEYS='[{"hash":"<sha256>","subject":"dev","roles":["oncall"]}]'
+TINKR_API_KEYS='[{"hash":"<sha256>","subject":"dev","roles":["oncall"]}]'
 EOF
 ```
 
@@ -51,7 +51,7 @@ Start the server in dev mode (auto-reloads on file change):
 ```bash
 uv run tinkr-server start --reload
 # or
-TINKER_BACKEND=grafana uv run python -m tinker.server.app
+TINKR_BACKEND=grafana uv run python -m tinker.server.app
 ```
 
 If you want Loki and Prometheus locally, run them separately with Docker:
@@ -68,7 +68,7 @@ docker run -d --name prometheus -p 9090:9090 \
 For CloudWatch:
 ```bash
 aws configure   # or aws sso login
-export TINKER_BACKEND=cloudwatch
+export TINKR_BACKEND=cloudwatch
 export AWS_REGION=us-east-1
 uv run tinkr-server start --reload
 ```
@@ -76,7 +76,7 @@ uv run tinkr-server start --reload
 For GCP:
 ```bash
 gcloud auth application-default login
-export TINKER_BACKEND=gcp
+export TINKR_BACKEND=gcp
 export GCP_PROJECT_ID=your-project
 uv run tinkr-server start --reload
 ```

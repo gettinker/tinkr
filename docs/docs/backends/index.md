@@ -5,11 +5,11 @@ title: Backends Overview
 
 # Supported Backends
 
-Tinker works with every major cloud observability stack and popular self-hosted solutions. The active backend is selected by the `TINKER_BACKEND` environment variable at server startup.
+Tinker works with every major cloud observability stack and popular self-hosted solutions. The active backend is selected by the `TINKR_BACKEND` environment variable at server startup.
 
 ## Backend comparison
 
-| Backend | `TINKER_BACKEND` | Logs | Metrics | Traces | Auth |
+| Backend | `TINKR_BACKEND` | Logs | Metrics | Traces | Auth |
 |---|---|---|---|---|---|
 | [AWS CloudWatch](./cloudwatch.md) | `cloudwatch` | CloudWatch Logs Insights | GetMetricData | X-Ray | IAM Role |
 | [Google Cloud](./gcp.md) | `gcp` | Cloud Logging | Cloud Monitoring | Cloud Trace | Workload Identity |
@@ -25,7 +25,7 @@ Tinker works with every major cloud observability stack and popular self-hosted 
 
 ### One backend per server instance
 
-`TINKER_BACKEND` is read once at startup. The backend is selected, credentials are resolved from the cloud identity mechanism (IAM role, Workload Identity, Managed Identity), and the server starts.
+`TINKR_BACKEND` is read once at startup. The backend is selected, credentials are resolved from the cloud identity mechanism (IAM role, Workload Identity, Managed Identity), and the server starts.
 
 For multi-cloud environments, deploy one Tinker instance per cloud account/project and use [profiles](../commands/profile.md) to route CLI requests to the right instance.
 
@@ -78,7 +78,7 @@ git clone https://github.com/gettinker/tinkr && cd tinkr
 docker build -t tinker:local .
 docker run -d --name tinker -p 8000:8000 \
   -e ANTHROPIC_API_KEY=sk-ant-... \
-  -e TINKER_BACKEND=grafana \
+  -e TINKR_BACKEND=grafana \
   -e GRAFANA_LOKI_URL=http://loki:3100 \
   -e GRAFANA_PROMETHEUS_URL=http://prometheus:9090 \
   tinker:local

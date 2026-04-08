@@ -64,7 +64,7 @@ Each backend returns real data from its provider.
 ### 1.6 Elasticsearch / OpenSearch ✅
 - [x] `query_logs` (DSL), `get_metrics`, `detect_anomalies`
 
-**Deliverable:** `tinker logs <service>` returns real log entries from all backends.
+**Deliverable:** `tinkr logs <service>` returns real log entries from all backends.
 
 ---
 
@@ -79,7 +79,7 @@ Each backend returns real data from its provider.
 - [x] Raw native query passthrough
 - [x] 75+ tests across all translators
 
-**Deliverable:** `tinker logs payments-api -q 'level:ERROR'` works against every backend.
+**Deliverable:** `tinkr logs payments-api -q 'level:ERROR'` works against every backend.
 
 ---
 
@@ -147,18 +147,18 @@ Each backend returns real data from its provider.
 - [x] `GET /mcp/sse` + `POST /mcp/messages`
 - [x] All tools from active backend exposed via single endpoint
 
-### 4.4 `tinker server` command ✅
-- [x] `tinker server` — starts uvicorn directly from the CLI
+### 4.4 `tinkr-server start` command ✅
+- [x] `tinkr-server start` — starts uvicorn directly from the CLI
 - [x] `--host`, `--port`, `--reload`, `--log-level` flags
 - [x] Removed separate `tinker-server` entry point — everything through `tinker` CLI
 
 ### 4.5 Server-only CLI model ✅
 - [x] Removed `LocalClient` — `RemoteClient` is the only client
-- [x] `~/.tinkr/config` stores server URL; `TINKER_API_TOKEN` env var stores token
+- [x] `~/.tinkr/config` stores server URL; `TINKR_API_TOKEN` env var stores token
 - [x] `get_client()` always returns `RemoteClient`
-- [x] `tinker server` on localhost = "local mode" without any special code path
+- [x] `tinkr-server start` on localhost = "local mode" without any special code path
 
-**Deliverable:** `pip install tinker-agent && tinker server` starts a functional server.
+**Deliverable:** `pip install tinker-agent && tinkr-server start` starts a functional server.
 
 ---
 
@@ -172,13 +172,13 @@ Each backend returns real data from its provider.
 
 ## Phase 4.6: Init Wizards ✅
 
-- [x] `tinker init server` — `ServerWizard`
+- [x] `tinkr-server init` — `ServerWizard`
   - [x] Cloud auto-detection via instance metadata (AWS IMDS, GCP metadata, Azure IMDS)
   - [x] IAM/permissions check with test API call
   - [x] Slack bot token test
   - [x] API key generation + SHA-256 hash
   - [x] `.env` write
-- [x] `tinker init cli` — `CLIWizard`
+- [x] `tinkr init` — `CLIWizard`
   - [x] Server URL prompt (default: `http://localhost:8000`)
   - [x] API token prompt
   - [x] Health check test against server
@@ -188,7 +188,7 @@ Each backend returns real data from its provider.
 
 ## Phase 4.7: Anomaly Detection UX ✅
 
-- [x] `tinker anomaly <service>` — fast table, no LLM
+- [x] `tinkr anomaly <service>` — fast table, no LLM
 - [x] `tinker monitor <service>` — interactive REPL
   - [x] `explain <n>` — compact LLM context (~300–1000 tokens regardless of log volume)
   - [x] `fix <n>` — mini agent loop with code tools
@@ -208,11 +208,11 @@ Each backend returns real data from its provider.
   - [x] SIGTERM-safe (tasks cancelled on server shutdown via lifespan hook)
   - [x] Anomaly hash deduplication — Slack only notified when set changes
 - [x] Watch routes: `POST/GET/DELETE /api/v1/watches`
-- [x] `tinker watch start/list/stop` — calls server API, no local daemon
+- [x] `tinkr watch start/list/stop` — calls server API, no local daemon
 - [x] SQLite schema updated — no PID column (server manages tasks, not OS processes)
 - [x] Slack post on anomaly set change
 
-**Deliverable:** `tinker watch start payments-api --channel "#incidents"` starts a persistent server-side watch; stops cleanly with `tinker watch stop`.
+**Deliverable:** `tinkr watch start payments-api --channel "#incidents"` starts a persistent server-side watch; stops cleanly with `tinkr watch stop`.
 
 ---
 
@@ -235,7 +235,7 @@ Each backend returns real data from its provider.
 - [ ] OpenTelemetry instrumentation on Tinker itself
 - [ ] Rate limiting on API endpoints (per-client, per-minute)
 - [ ] Redis-backed session store for multi-replica deployments
-- [ ] Secrets rotation — re-reads `TINKER_API_KEYS` on SIGHUP
+- [ ] Secrets rotation — re-reads `TINKR_API_KEYS` on SIGHUP
 - [ ] End-to-end integration tests: LocalStack (AWS) + docker-compose Grafana stack
 - [ ] Load test: 10 concurrent `/analyze` requests
 - [ ] Tests for `LogSummarizer`, `WatchManager`, `MonitorREPL`, `InitWizard`
@@ -266,7 +266,7 @@ src/tinker/
 │   └── watch_manager.py  asyncio task manager for background watches
 ├── agent/              Claude orchestrator, tool definitions, guardrails
 ├── interfaces/
-│   ├── cli.py          tinker server, init, anomaly, monitor, watch, ...
+│   ├── cli.py          tinkr-server start, init, anomaly, monitor, watch, ...
 │   ├── monitor_repl.py Interactive REPL
 │   ├── init_wizard.py  ServerWizard + CLIWizard
 │   └── slack_bot.py    Slack Bolt handler
@@ -274,7 +274,7 @@ src/tinker/
 │   └── summarizer.py   LogSummarizer — deduplication + compact LLM context
 ├── client/
 │   ├── remote.py       RemoteClient — HTTP to Tinker server
-│   └── config.py       Reads ~/.tinkr/config + TINKER_SERVER_URL
+│   └── config.py       Reads ~/.tinkr/config + TINKR_SERVER_URL
 ├── store/
 │   └── db.py           SQLite — sessions + watch state
 ├── code/               Git/GitHub integration, fix application
@@ -282,8 +282,8 @@ src/tinker/
 ```
 
 **Key design decisions:**
-- No local mode — the server is always involved. `tinker server` on localhost is "local mode" with no special code path.
-- Cloud credentials stay on the server (IAM role). The CLI holds only `TINKER_API_TOKEN`.
+- No local mode — the server is always involved. `tinkr-server start` on localhost is "local mode" with no special code path.
+- Cloud credentials stay on the server (IAM role). The CLI holds only `TINKR_API_TOKEN`.
 - Watches are asyncio tasks inside the server process — no detached subprocesses, no PID tracking.
 - LLM cost for `monitor explain` is bounded by `LogSummarizer` regardless of raw error volume.
 
@@ -328,7 +328,7 @@ src/tinker/
 ## Non-goals for v1
 
 - Auto-merging PRs — human must merge
-- `tinker deploy` wizard — deployment is the platform team's job (Helm/Terraform)
+- `tinkr deploy` wizard — deployment is the platform team's job (Helm/Terraform)
 - Multi-tenant / SaaS mode
 - Custom model fine-tuning
 - Incident ticketing integration (Jira, PagerDuty) — Phase 8+

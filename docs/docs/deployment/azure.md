@@ -61,7 +61,7 @@ az containerapp create \
   --target-port 8000 \
   --ingress external \
   --env-vars \
-    TINKER_BACKEND=azure \
+    TINKR_BACKEND=azure \
     AZURE_LOG_ANALYTICS_WORKSPACE_ID=<workspace-id> \
     AZURE_SUBSCRIPTION_ID=<subscription-id> \
     AZURE_RESOURCE_GROUP=my-rg \
@@ -98,7 +98,7 @@ spec:
           ports:
             - containerPort: 8000
           env:
-            - name: TINKER_BACKEND
+            - name: TINKR_BACKEND
               value: azure
             - name: AZURE_LOG_ANALYTICS_WORKSPACE_ID
               value: "<workspace-id>"

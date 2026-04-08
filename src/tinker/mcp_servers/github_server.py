@@ -8,7 +8,7 @@ Registration in .claude/settings.json:
       "env": {
         "GITHUB_TOKEN": "ghp_...",
         "GITHUB_REPO": "your-org/your-repo",
-        "TINKER_REPO_PATH": "/path/to/local/clone"
+        "TINKR_REPO_PATH": "/path/to/local/clone"
       }
     }
   }

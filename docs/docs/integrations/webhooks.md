@@ -138,20 +138,20 @@ You can call the Tinker server directly from any system:
 ```bash
 # Detect anomalies
 curl -X POST https://tinker.acme.internal/api/v1/anomalies \
-  -H "Authorization: Bearer $TINKER_API_TOKEN" \
+  -H "Authorization: Bearer $TINKR_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"service": "payments-api", "window_minutes": 10}'
 
 # Stream RCA
 curl -X POST https://tinker.acme.internal/api/v1/rca \
-  -H "Authorization: Bearer $TINKER_API_TOKEN" \
+  -H "Authorization: Bearer $TINKR_API_TOKEN" \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
   -d '{"service": "payments-api", "since": "1h"}'
 
 # Get SLO
 curl -X POST https://tinker.acme.internal/api/v1/slo \
-  -H "Authorization: Bearer $TINKER_API_TOKEN" \
+  -H "Authorization: Bearer $TINKR_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"service": "payments-api", "target_pct": 99.9, "window": "30d"}'
 ```
@@ -171,7 +171,7 @@ Add Tinker as an MCP server in `.claude/settings.json` to give Claude Code direc
       "transport": "sse",
       "url": "https://tinker.acme.internal/mcp/sse",
       "headers": {
-        "Authorization": "Bearer ${TINKER_API_TOKEN}"
+        "Authorization": "Bearer ${TINKR_API_TOKEN}"
       }
     }
   }

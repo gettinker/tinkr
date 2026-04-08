@@ -122,7 +122,7 @@ journalctl -u tinker -f
       "image": "<your-ecr-account>.dkr.ecr.us-east-1.amazonaws.com/tinker:latest",
       "portMappings": [{ "containerPort": 8000 }],
       "environment": [
-        { "name": "TINKER_BACKEND", "value": "cloudwatch" },
+        { "name": "TINKR_BACKEND", "value": "cloudwatch" },
         { "name": "AWS_DEFAULT_REGION", "value": "us-east-1" }
       ],
       "secrets": [
@@ -131,7 +131,7 @@ journalctl -u tinker -f
           "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:tinker/anthropic-api-key"
         },
         {
-          "name": "TINKER_API_KEYS",
+          "name": "TINKR_API_KEYS",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:tinker/api-keys"
         }
       ],
@@ -192,10 +192,10 @@ Deploy one Tinker server per AWS account. Each has its own IAM role and profile:
 
 ```bash
 # Account A server
-TINKER_BACKEND=cloudwatch AWS_DEFAULT_REGION=us-east-1 tinker server
+TINKR_BACKEND=cloudwatch AWS_DEFAULT_REGION=us-east-1 tinker server
 
 # Account B server
-TINKER_BACKEND=cloudwatch AWS_DEFAULT_REGION=eu-west-1 tinker server
+TINKR_BACKEND=cloudwatch AWS_DEFAULT_REGION=eu-west-1 tinker server
 ```
 
-CLI users switch context with `tinker profile use <name>` or by setting `TINKER_SERVER_URL`.
+CLI users switch context with `tinker profile use <name>` or by setting `TINKR_SERVER_URL`.

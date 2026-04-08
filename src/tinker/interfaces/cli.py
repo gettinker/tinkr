@@ -1,4 +1,4 @@
-"""Tinker CLI.
+"""Tinkr CLI.
 
 Structure
 ---------
@@ -74,7 +74,7 @@ def _get_client():
 
 @app.command("init")
 def init_cli() -> None:
-    """[bold cyan]Connect this machine's CLI to a Tinker server.[/bold cyan]
+    """[bold cyan]Connect this machine's CLI to a Tinkr server.[/bold cyan]
 
     Asks for the server URL and API token, tests the connection,
     and writes [bold]~/.tinkr/config[/bold].
@@ -89,13 +89,13 @@ def init_cli() -> None:
 
 @app.command()
 def doctor() -> None:
-    """[bold cyan]Verify connectivity to the configured Tinker server.[/bold cyan]"""
+    """[bold cyan]Verify connectivity to the configured Tinkr server.[/bold cyan]"""
     _run(_doctor())
 
 
 async def _doctor() -> None:
     client = _get_client()
-    console.print(Panel.fit("[bold]Tinker Doctor[/bold]", border_style="cyan"))
+    console.print(Panel.fit("[bold]Tinkr Doctor[/bold]", border_style="cyan"))
     console.print()
     results: list[tuple[str, bool, str]] = []
 
@@ -107,7 +107,7 @@ async def _doctor() -> None:
         _print_check_table(results)
         console.print()
         console.print(
-            "[red]Cannot reach Tinker server.[/red]\n"
+            "[red]Cannot reach Tinkr server.[/red]\n"
             "[dim]Run [bold]tinkr-server[/bold] on the server machine, "
             "then [bold]tinkr init[/bold] to point this CLI at it.[/dim]"
         )
@@ -336,7 +336,7 @@ def watch_start(
     ),
     interval: int = typer.Option(60, "--interval", "-i", help="Poll interval in seconds"),
 ) -> None:
-    """[bold cyan]Start a watch for a service on the Tinker server.[/bold cyan]
+    """[bold cyan]Start a watch for a service on the Tinkr server.[/bold cyan]
 
     The server polls for anomalies on a schedule and dispatches alerts via the
     configured notifier when the anomaly set changes.
@@ -355,7 +355,7 @@ def watch_start(
 def watch_list(
     output: OutputFormat = typer.Option(OutputFormat.table, "--output", "-o"),
 ) -> None:
-    """[bold cyan]List watches on the Tinker server.[/bold cyan]"""
+    """[bold cyan]List watches on the Tinkr server.[/bold cyan]"""
     _run(_watch_list(output))
 
 
@@ -363,7 +363,7 @@ def watch_list(
 def watch_stop(
     watch_id: str = typer.Argument(..., help="Watch ID from 'tinker watch list'"),
 ) -> None:
-    """[bold cyan]Stop a watch on the Tinker server.[/bold cyan]"""
+    """[bold cyan]Stop a watch on the Tinkr server.[/bold cyan]"""
     _run(_watch_stop(watch_id))
 
 
@@ -371,7 +371,7 @@ def watch_stop(
 def watch_delete(
     watch_id: str = typer.Argument(..., help="Watch ID from 'tinker watch list'"),
 ) -> None:
-    """[bold cyan]Permanently delete a watch from the Tinker server.[/bold cyan]
+    """[bold cyan]Permanently delete a watch from the Tinkr server.[/bold cyan]
 
     Removes the watch record entirely (unlike [bold]stop[/bold] which keeps it as 'stopped').
 
@@ -720,7 +720,7 @@ def profile_list() -> None:
     cfg = tc.get()
     if not cfg.profiles:
         console.print(
-            "[dim]No profiles configured. Run [bold]tinker init server[/bold] first, "
+            "[dim]No profiles configured. Run [bold]tinkr-server init[/bold] first, "
             "or add a profile with [bold]tinker profile add[/bold].[/dim]"
         )
         return
@@ -775,7 +775,7 @@ def _set_active_profile(name: str) -> None:
     from pathlib import Path
     toml_file = Path.home() / ".tinkr" / "config.toml"
     if not toml_file.exists():
-        console.print("[red]config.toml not found. Run [bold]tinker init server[/bold] first.[/red]")
+        console.print("[red]config.toml not found. Run [bold]tinkr-server init[/bold] first.[/red]")
         raise typer.Exit(1)
     text = toml_file.read_text(encoding="utf-8")
     new_line = f'active_profile = "{name}"'
@@ -799,7 +799,7 @@ def _set_active_profile(name: str) -> None:
 
 @app.command()
 def version() -> None:
-    """Print the Tinker version."""
+    """Print the Tinkr version."""
     console.print(f"tinker {__version__}")
 
 
