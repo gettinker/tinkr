@@ -13,11 +13,11 @@ The GitHub integration lets Tinker read your source code during investigations a
 
 | Feature | Without GitHub | With GitHub |
 |---|---|---|
-| `tinker investigate` → `explain` | ✓ log-based only | ✓ log + code context |
-| `tinker investigate` → `fix` | ✗ unavailable | ✓ patch with diff |
-| `tinker investigate` → `approve` | ✗ unavailable | ✓ PR opened |
-| `tinker rca` | ✓ log + metrics + traces | ✓ + code context from highest-severity anomaly |
-| `tinker deploy list/correlate` | ✗ unavailable | ✓ commit history |
+| `tinkr investigate` → `explain` | ✓ log-based only | ✓ log + code context |
+| `tinkr investigate` → `fix` | ✗ unavailable | ✓ patch with diff |
+| `tinkr investigate` → `approve` | ✗ unavailable | ✓ PR opened |
+| `tinkr rca` | ✓ log + metrics + traces | ✓ + code context from highest-severity anomaly |
+| `tinkr deploy list/correlate` | ✗ unavailable | ✓ commit history |
 
 ---
 
@@ -40,7 +40,7 @@ Copy the generated token (`github_pat_...`).
 
 ### 2. Add to server config
 
-`tinker init server` asks for this in Step 3. For manual setup:
+`tinkr init server` asks for this in Step 3. For manual setup:
 
 ```bash title="~/.tinker/.env"
 GITHUB_TOKEN=github_pat_xxxxxxxxxxxxxxxx
@@ -86,7 +86,7 @@ The LLM never receives more than the relevant code context — full files are ne
 
 ## How auto-PRs work
 
-When you type `approve` in the `tinker investigate` REPL:
+When you type `approve` in the `tinkr investigate` REPL:
 
 1. Tinker creates a branch named `tinker/fix-{uuid}` on the configured repo
 2. Applies the proposed file changes (the exact `old_string → new_string` patch)
@@ -106,11 +106,11 @@ api_keys = [
 
 ## Deploy correlation
 
-`tinker deploy list` and `tinker deploy correlate` use the GitHub Commits API to list recent commits for a service path and cross-reference them with anomaly timestamps.
+`tinkr deploy list` and `tinkr deploy correlate` use the GitHub Commits API to list recent commits for a service path and cross-reference them with anomaly timestamps.
 
 ```bash
-tinker deploy list payments-api --since 7d
-tinker deploy correlate payments-api --since 7d
+tinkr deploy list payments-api --since 7d
+tinkr deploy correlate payments-api --since 7d
 ```
 
 Commits with anomalies detected within 30 minutes are highlighted in red.

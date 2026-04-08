@@ -129,5 +129,5 @@ gcloud auth application-default login
 
 export TINKER_BACKEND=gcp
 export GCP_PROJECT_ID=acme-dev-123456
-uv run tinker-server
+uv run tinkr-server
 ```

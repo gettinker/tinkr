@@ -150,5 +150,5 @@ export TINKER_BACKEND=azure
 export AZURE_LOG_ANALYTICS_WORKSPACE_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 export AZURE_SUBSCRIPTION_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 export AZURE_RESOURCE_GROUP=dev-rg
-uv run tinker-server
+uv run tinkr-server
 ```

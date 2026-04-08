@@ -3,8 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tinker"
-version = "0.1.0"
+name = "tinkr"
+version = "0.1.0b1"
 description = "AI-powered observability and incident response agent"
 license = { file = "LICENSE" }
 requires-python = ">=3.12"
@@ -48,13 +48,14 @@ dependencies = [
 ]
 
 [project.scripts]
-tinker                = "tinker.interfaces.cli:app"
-tinker-cloudwatch-mcp = "tinker.mcp_servers.cloudwatch_server:main"
-tinker-elastic-mcp    = "tinker.mcp_servers.elastic_server:main"
-tinker-github-mcp     = "tinker.mcp_servers.github_server:main"
-tinker-azure-mcp      = "tinker.mcp_servers.azure_server:main"
-tinker-grafana-mcp    = "tinker.mcp_servers.grafana_server:main"
-tinker-datadog-mcp    = "tinker.mcp_servers.datadog_server:main"
+tinkr                = "tinker.interfaces.cli:app"
+tinkr-server         = "tinker.server.app:main"
+tinkr-cloudwatch-mcp = "tinker.mcp_servers.cloudwatch_server:main"
+tinkr-elastic-mcp    = "tinker.mcp_servers.elastic_server:main"
+tinkr-github-mcp     = "tinker.mcp_servers.github_server:main"
+tinkr-azure-mcp      = "tinker.mcp_servers.azure_server:main"
+tinkr-grafana-mcp    = "tinker.mcp_servers.grafana_server:main"
+tinkr-datadog-mcp    = "tinker.mcp_servers.datadog_server:main"
 
 
 [dependency-groups]

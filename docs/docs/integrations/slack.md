@@ -67,7 +67,7 @@ Copy:
 
 ### 6. Add secrets to server config
 
-`tinker init server` asks for these in Step 2. For manual setup:
+`tinkr init server` asks for these in Step 2. For manual setup:
 
 ```bash title="~/.tinker/.env"
 SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx
@@ -128,8 +128,8 @@ channel   = "#payments-oncall"
 Start a watch targeting a specific notifier:
 
 ```bash
-tinker watch start payments-api --notifier payments-team
-tinker watch start payments-api --notifier default --destination "#sre-alerts"
+tinkr watch start payments-api --notifier payments-team
+tinkr watch start payments-api --notifier default --destination "#sre-alerts"
 ```
 
 ### Alert message format

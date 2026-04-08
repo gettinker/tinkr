@@ -75,7 +75,7 @@ The most impactful actions — applying code fixes and opening pull requests —
 
 | Interface | Approval mechanism |
 |---|---|
-| CLI (`tinker investigate`) | `approve` REPL command, requires `oncall` or `sre-lead` role |
+| CLI (`tinkr investigate`) | `approve` REPL command, requires `oncall` or `sre-lead` role |
 | Slack | `/tinker-approve <session-id>`, checked against Slack user email → role mapping |
 | API | `POST /api/v1/approve`, requires `oncall` or `sre-lead` in JWT/API key roles |
 | Claude Code | `apply_fix` is in the `deny` list by default; user must explicitly allow |

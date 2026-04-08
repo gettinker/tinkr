@@ -143,5 +143,5 @@ aws configure  # or use SSO: aws sso login
 
 export TINKER_BACKEND=cloudwatch
 export AWS_REGION=us-east-1
-uv run tinker-server
+uv run tinkr-server
 ```

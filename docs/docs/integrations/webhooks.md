@@ -93,9 +93,9 @@ Discord webhooks do not require a destination override — the channel is fixed 
 ## Using webhook notifiers with watches
 
 ```bash
-tinker watch start payments-api --notifier pagerduty
-tinker watch start auth-service --notifier discord-ops
-tinker watch start inventory-api --notifier custom --destination "https://hooks.acme.com/inventory"
+tinkr watch start payments-api --notifier pagerduty
+tinkr watch start auth-service --notifier discord-ops
+tinkr watch start inventory-api --notifier custom --destination "https://hooks.acme.com/inventory"
 ```
 
 The `--destination` flag overrides the webhook URL for notifiers that support it.

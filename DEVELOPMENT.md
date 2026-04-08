@@ -25,7 +25,7 @@ cd tinker
 uv sync
 
 # Verify
-uv run tinker --version
+uv run tinkr --version
 uv run pytest --collect-only   # should collect tests with no errors
 ```
 
@@ -50,7 +50,7 @@ EOF
 Start the server in dev mode (auto-reloads on file change):
 
 ```bash
-uv run tinker-server --reload
+uv run tinkr-server --reload
 # or
 TINKER_BACKEND=grafana uv run python -m tinker.server.app
 ```
@@ -71,7 +71,7 @@ For CloudWatch:
 aws configure   # or aws sso login
 export TINKER_BACKEND=cloudwatch
 export AWS_REGION=us-east-1
-uv run tinker-server --reload
+uv run tinkr-server --reload
 ```
 
 For GCP:
@@ -79,7 +79,7 @@ For GCP:
 gcloud auth application-default login
 export TINKER_BACKEND=gcp
 export GCP_PROJECT_ID=your-project
-uv run tinker-server --reload
+uv run tinkr-server --reload
 ```
 
 ---

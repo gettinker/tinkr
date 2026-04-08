@@ -159,5 +159,5 @@ export TINKER_BACKEND=elastic
 export ELASTIC_URL=http://localhost:9200
 export ELASTIC_USERNAME=elastic
 export ELASTIC_PASSWORD=changeme
-uv run tinker-server
+uv run tinkr-server
 ```

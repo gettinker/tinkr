@@ -1,0 +1,32 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"   # v0.1.0b1, v0.1.0, v1.0.0, etc.
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/tinkr/
+    permissions:
+      contents: read
+      id-token: write   # required for PyPI trusted publishing (no token needed)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        run: uv build
+
+      - name: Publish to PyPI
+        run: uv publish

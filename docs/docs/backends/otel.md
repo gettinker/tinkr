@@ -215,5 +215,5 @@ docker run -p 9200:9200 -e "discovery.type=single-node" \
 export TINKER_BACKEND=otel
 export OTEL_OPENSEARCH_URL=http://localhost:9200
 export OTEL_PROMETHEUS_URL=http://localhost:9090
-uv run tinker-server
+uv run tinkr-server
 ```

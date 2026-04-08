@@ -10,7 +10,7 @@ Open-source AI-powered observability and incident response agent. Connects to yo
 ┌──────────────────────────────────────────────────────────────────┐
 │  Tinker Server  (runs anywhere with cloud access)                │
 │                                                                  │
-│  tinker server  ──► FastAPI on :8000                             │
+│  tinkr server  ──► FastAPI on :8000                             │
 │                                                                  │
 │  POST /api/v1/rca        full AI root-cause analysis (SSE)       │
 │  POST /api/v1/anomalies  anomaly detection                       │
@@ -82,7 +82,7 @@ docker run -d -p 8000:8000 --env-file ~/.tinker/.env -v ~/.tinker:/root/.tinker 
 
 ```bash
 # 1. Run the setup wizard
-tinker init server
+tinkr init server
 #   Wizard order:
 #   Step 1 — LLM provider + model + API key
 #   Step 2 — Slack bot (optional)
@@ -94,7 +94,7 @@ tinker init server
 #           ~/.tinker/.env         (secrets)
 
 # 2. Start the server
-tinker server
+tinkr server
 # Listening on http://0.0.0.0:8000
 ```
 
@@ -102,14 +102,14 @@ tinker server
 
 ```bash
 # 3. Connect the CLI to the server
-tinker init cli
+tinkr init cli
 # Tinker server URL [http://localhost:8000]: https://tinker.acme.internal
 # API token: <paste key from step 1>
 # ✓ Connected: Tinker v0.1.0  backend=cloudwatch
 # ✓ Saved: ~/.tinker/config
 
 # 4. Verify
-tinker doctor
+tinkr doctor
 ```
 
 ---
@@ -121,46 +121,46 @@ All observability commands take a **service name** as the first argument — the
 ### Server management
 
 ```bash
-tinker server                        # start on :8000
-tinker server --port 9000            # custom port
-tinker server --host 127.0.0.1       # bind to localhost only
-tinker server --reload               # dev mode — hot reload
+tinkr server                        # start on :8000
+tinkr server --port 9000            # custom port
+tinkr server --host 127.0.0.1       # bind to localhost only
+tinkr server --reload               # dev mode — hot reload
 
-tinker init server                   # first-time setup wizard
-tinker init cli                      # connect CLI to a running server
+tinkr init server                   # first-time setup wizard
+tinkr init cli                      # connect CLI to a running server
 
-tinker doctor                        # verify server connection and backend
+tinkr doctor                        # verify server connection and backend
 ```
 
 ### Command summary
 
 | Command | LLM? | Description |
 |---|---|---|
-| `tinker logs <svc>` | — | Fetch recent log entries |
-| `tinker tail <svc>` | — | Stream live logs (Ctrl-C to stop) |
-| `tinker metrics <svc> <metric>` | — | Fetch metric time series |
-| `tinker anomaly <svc>` | — | Detect anomalies (fast, no LLM) |
-| `tinker trace <svc>` | — | Fetch recent distributed traces |
-| `tinker diff <svc>` | — | Compare two time windows side-by-side |
-| `tinker slo <svc>` | — | Availability, error budget, and burn rate |
-| `tinker investigate <svc>` | on demand | Interactive REPL — group, explain, fix, PR |
-| `tinker rca <svc>` | ✓ | Full streaming root-cause analysis |
-| `tinker deploy list <svc>` | — | Recent commits (deploys) from GitHub |
-| `tinker deploy correlate <svc>` | — | Highlight deploys near anomaly spikes |
-| `tinker watch start/list/stop/delete` | — | Server-side background anomaly watches |
-| `tinker alert create/list/mute/delete` | — | Threshold-based alert rules |
-| `tinker profile list/use/add` | — | Manage cloud backend profiles |
+| `tinkr logs <svc>` | — | Fetch recent log entries |
+| `tinkr tail <svc>` | — | Stream live logs (Ctrl-C to stop) |
+| `tinkr metrics <svc> <metric>` | — | Fetch metric time series |
+| `tinkr anomaly <svc>` | — | Detect anomalies (fast, no LLM) |
+| `tinkr trace <svc>` | — | Fetch recent distributed traces |
+| `tinkr diff <svc>` | — | Compare two time windows side-by-side |
+| `tinkr slo <svc>` | — | Availability, error budget, and burn rate |
+| `tinkr investigate <svc>` | on demand | Interactive REPL — group, explain, fix, PR |
+| `tinkr rca <svc>` | ✓ | Full streaming root-cause analysis |
+| `tinkr deploy list <svc>` | — | Recent commits (deploys) from GitHub |
+| `tinkr deploy correlate <svc>` | — | Highlight deploys near anomaly spikes |
+| `tinkr watch start/list/stop/delete` | — | Server-side background anomaly watches |
+| `tinkr alert create/list/mute/delete` | — | Threshold-based alert rules |
+| `tinkr profile list/use/add` | — | Manage cloud backend profiles |
 
 ---
 
-### Profile management — `tinker profile`
+### Profile management — `tinkr profile`
 
 A **profile** bundles a cloud backend with its services and alert notifiers. Use one profile per cloud account. The active profile is what the server uses.
 
 ```bash
-tinker profile list                  # show all profiles + which is active
-tinker profile use aws-prod          # switch active profile
-tinker profile add                   # add a new profile interactively
+tinkr profile list                  # show all profiles + which is active
+tinkr profile use aws-prod          # switch active profile
+tinkr profile add                   # add a new profile interactively
 ```
 
 ```
@@ -170,36 +170,36 @@ tinker profile add                   # add a new profile interactively
  ○ aws-staging   cloudwatch       1           1
  ○ local-dev     grafana          2           1
 
-Active: aws-prod — change with tinker profile use <name>
+Active: aws-prod — change with tinkr profile use <name>
 ```
 
-`tinker profile use` updates `active_profile` in `~/.tinker/config.toml` immediately. The server picks it up on the next restart (or `tinker server --reload`).
+`tinkr profile use` updates `active_profile` in `~/.tinker/config.toml` immediately. The server picks it up on the next restart (or `tinkr server --reload`).
 
 ---
 
-### Anomaly detection — `tinker anomaly`
+### Anomaly detection — `tinkr anomaly`
 
 Fast anomaly check with no LLM cost. Returns a table directly.
 
 ```bash
-tinker anomaly payments-api                    # last 1h
-tinker anomaly payments-api --since 2h         # custom window
-tinker anomaly payments-api --severity high    # filter by severity
-tinker anomaly payments-api --output json      # machine-readable
+tinkr anomaly payments-api                    # last 1h
+tinkr anomaly payments-api --since 2h         # custom window
+tinkr anomaly payments-api --severity high    # filter by severity
+tinkr anomaly payments-api --output json      # machine-readable
 ```
 
 Output shows severity, metric name, description, number of unique error patterns, and distinct stack traces detected in the error logs.
 
 ---
 
-### Interactive investigation — `tinker investigate`
+### Interactive investigation — `tinkr investigate`
 
 Log-driven end-to-end debugging: fetch errors → group by pattern → explain → fix → PR. LLM is only invoked when you explicitly type `explain` or `fix`.
 
 ```bash
-tinker investigate payments-api
-tinker investigate payments-api --since 2h
-tinker investigate payments-api --level WARN
+tinkr investigate payments-api
+tinkr investigate payments-api --since 2h
+tinkr investigate payments-api --level WARN
 ```
 
 **Level 1 — error groups:**
@@ -277,15 +277,15 @@ Example: 1000 raw error logs → 2 unique patterns + 1 stack trace → ~1000-tok
 
 ---
 
-### Distributed tracing — `tinker trace`
+### Distributed tracing — `tinkr trace`
 
 Fetch recent traces from your tracing backend (Tempo, X-Ray, Cloud Trace, Datadog APM). Backends that don't support tracing return an empty list gracefully.
 
 ```bash
-tinker trace payments-api                    # last 1h
-tinker trace payments-api --since 30m        # shorter window
-tinker trace payments-api --limit 50         # more results
-tinker trace payments-api --output json
+tinkr trace payments-api                    # last 1h
+tinkr trace payments-api --since 30m        # shorter window
+tinkr trace payments-api --limit 50         # more results
+tinkr trace payments-api --output json
 ```
 
 ```
@@ -300,16 +300,16 @@ Tip: check your tracing backend (Tempo / X-Ray / Cloud Trace) for the full water
 
 ---
 
-### Window diff — `tinker diff`
+### Window diff — `tinkr diff`
 
 Compare error rates and anomalies between two time windows. Useful for answering "is this worse than it was an hour ago?"
 
 The baseline window is automatically shifted back so it ends where the compare window begins — windows never overlap.
 
 ```bash
-tinker diff payments-api                             # baseline=2h vs now=1h
-tinker diff payments-api --baseline 24h --compare 1h
-tinker diff auth-service --output json
+tinkr diff payments-api                             # baseline=2h vs now=1h
+tinkr diff payments-api --baseline 24h --compare 1h
+tinkr diff auth-service --output json
 ```
 
 ```
@@ -329,16 +329,16 @@ Resolved (0):
 
 ---
 
-### Root Cause Analysis — `tinker rca`
+### Root Cause Analysis — `tinkr rca`
 
 Runs a full AI root-cause analysis combining logs, metrics, and traces. Streams a structured report with six sections: executive summary, root cause, contributing factors, timeline, immediate actions, and prevention.
 
 Uses `claude-opus-4-6` with extended thinking for confirmed high-severity incidents.
 
 ```bash
-tinker rca payments-api                    # last 1h
-tinker rca payments-api --since 2h         # wider window
-tinker rca payments-api --severity high    # only include high/critical anomalies
+tinkr rca payments-api                    # last 1h
+tinkr rca payments-api --since 2h         # wider window
+tinkr rca payments-api --severity high    # only include high/critical anomalies
 ```
 
 ```
@@ -363,25 +363,25 @@ opened 18 long-running transactions simultaneously...
 2. Increase pool size temporarily: set DB_POOL_MAX=40 and restart
 
 ## Prevention
-- Add connection pool monitoring to tinker alert
+- Add connection pool monitoring to tinkr alert
 - Move batch jobs to a read replica
 ╰─────────────────────────────────────────────────────────────────╯
 ```
 
 ---
 
-### Deploy tracking — `tinker deploy`
+### Deploy tracking — `tinkr deploy`
 
 Cross-reference recent GitHub commits with anomaly spikes. Requires GitHub configured in `config.toml`.
 
 ```bash
 # List recent commits for a service
-tinker deploy list payments-api
-tinker deploy list payments-api --since 14d --limit 20
+tinkr deploy list payments-api
+tinkr deploy list payments-api --since 14d --limit 20
 
 # Highlight commits that had anomalies within 30 minutes
-tinker deploy correlate payments-api
-tinker deploy correlate payments-api --since 14d
+tinkr deploy correlate payments-api
+tinkr deploy correlate payments-api --since 14d
 ```
 
 ```
@@ -397,14 +397,14 @@ Commits with nearby anomalies are highlighted in red.
 
 ---
 
-### SLO tracking — `tinker slo`
+### SLO tracking — `tinkr slo`
 
 Compute availability, error budget consumed, and burn rate from log-based error rates. A burn rate > 1× means you are consuming the error budget faster than the window allows.
 
 ```bash
-tinker slo payments-api                          # 99.9% target, 30d window
-tinker slo payments-api --target 99.5 --window 7d
-tinker slo payments-api --output json
+tinkr slo payments-api                          # 99.9% target, 30d window
+tinkr slo payments-api --target 99.5 --window 7d
+tinkr slo payments-api --output json
 ```
 
 ```
@@ -420,28 +420,28 @@ tinker slo payments-api --output json
 
 ---
 
-### Threshold alert rules — `tinker alert`
+### Threshold alert rules — `tinkr alert`
 
 Alert rules fire via your configured notifier when a metric crosses a threshold during a watch tick. Unlike watches (which trigger on any anomaly change), alert rules give you precise numeric thresholds per metric.
 
 ```bash
 # Create a rule
-tinker alert create payments-api \
+tinkr alert create payments-api \
   --metric error_rate --op gt --threshold 5.0 \
   --severity high --notifier slack --destination "#oncall"
 
-tinker alert create auth-service \
+tinkr alert create auth-service \
   --metric latency_p99 --op gt --threshold 500 \
   --severity critical
 
 # List all rules
-tinker alert list
+tinkr alert list
 
 # Mute during planned maintenance (30m, 2h, 1d)
-tinker alert mute alert-3a976e39 --duration 4h
+tinkr alert mute alert-3a976e39 --duration 4h
 
 # Delete permanently
-tinker alert delete alert-3a976e39
+tinkr alert delete alert-3a976e39
 ```
 
 ```
@@ -455,27 +455,27 @@ tinker alert delete alert-3a976e39
 
 ---
 
-### Background watches — `tinker watch`
+### Background watches — `tinkr watch`
 
 Watches run as asyncio tasks inside the server process. The server polls for anomalies on a schedule and dispatches alerts via the configured notifier when the anomaly set changes.
 
 ```bash
 # Start a watch — uses the "default" notifier from the active profile
-tinker watch start payments-api
-tinker watch start payments-api --interval 120
+tinkr watch start payments-api
+tinkr watch start payments-api --interval 120
 
 # Route alerts to a specific notifier
-tinker watch start payments-api --notifier discord-ops
-tinker watch start payments-api --notifier slack-main --destination "#payments-oncall"
+tinkr watch start payments-api --notifier discord-ops
+tinkr watch start payments-api --notifier slack-main --destination "#payments-oncall"
 
 # List all watches on the server
-tinker watch list
+tinkr watch list
 
 # Stop a watch (keeps the record as 'stopped' in the DB)
-tinker watch stop watch-abc123
+tinkr watch stop watch-abc123
 
 # Delete a watch permanently (removes the DB record entirely)
-tinker watch delete watch-abc123
+tinkr watch delete watch-abc123
 ```
 
 ```
@@ -486,11 +486,11 @@ tinker watch delete watch-abc123
 ```
 
 **How it works:**
-1. `tinker watch start` calls `POST /api/v1/watches` on the server
+1. `tinkr watch start` calls `POST /api/v1/watches` on the server
 2. The server starts an asyncio task that polls `detect_anomalies` every `interval` seconds
 3. A SHA-256 hash of the current anomaly set is compared to the previous tick — the notifier is only called when the set changes
 4. Watch state is persisted in SQLite (`~/.tinker/tinker.db`) and resumed on server restart
-5. `tinker watch stop` marks the record stopped; `tinker watch delete` removes it
+5. `tinkr watch stop` marks the record stopped; `tinkr watch delete` removes it
 
 **Alert message format (Slack):**
 ```
@@ -508,19 +508,19 @@ Notifiers are configured per profile — see [Profiles and notifiers](#profiles-
 
 ```bash
 # ── Stream live logs ──────────────────────────────────────────────────────────
-tinker tail payments-api
-tinker tail payments-api -q 'level:ERROR'
-tinker tail payments-api -q 'level:(ERROR OR WARN) AND "timeout"'
-tinker tail payments-api --resource ecs -q 'level:ERROR'
+tinkr tail payments-api
+tinkr tail payments-api -q 'level:ERROR'
+tinkr tail payments-api -q 'level:(ERROR OR WARN) AND "timeout"'
+tinkr tail payments-api --resource ecs -q 'level:ERROR'
 
 # ── Fetch logs (no AI) ────────────────────────────────────────────────────────
-tinker logs payments-api
-tinker logs payments-api -q 'level:ERROR' --since 30m
-tinker logs payments-api --resource lambda -q '"cold start"'
+tinkr logs payments-api
+tinkr logs payments-api -q 'level:ERROR' --since 30m
+tinkr logs payments-api --resource lambda -q '"cold start"'
 
 # ── Metrics ───────────────────────────────────────────────────────────────────
-tinker metrics payments-api Errors --since 2h
-tinker metrics payments-api http_requests_total --resource ecs
+tinkr metrics payments-api Errors --since 2h
+tinkr metrics payments-api http_requests_total --resource ecs
 ```
 
 ---
@@ -545,9 +545,9 @@ Field aliases: `severity` → `level`, `svc`/`app` → `service`, `msg` → `mes
 Use `--resource TYPE` (or `-r TYPE`) to route queries to a specific log group / resource type.
 
 ```bash
-tinker logs payments-api --resource ecs -q 'level:ERROR'
-tinker logs my-function  --resource lambda
-tinker tail payments-api --resource eks
+tinkr logs payments-api --resource ecs -q 'level:ERROR'
+tinkr logs my-function  --resource lambda
+tinkr tail payments-api --resource eks
 ```
 
 | `--resource` | CloudWatch log group | GCP resource.type | Azure table | Loki label | ES index |
@@ -592,16 +592,16 @@ Set via `[llm]` in `config.toml` (wizard sets this in Step 1).
 
 ## Deployment
 
-The simplest deployment is `pip install tinker-agent && tinker server` on any machine that has cloud access — an EC2 instance with an IAM role, a Cloud Run instance with a Workload Identity, or your laptop.
+The simplest deployment is `pip install tinkr && tinkr server` on any machine that has cloud access — an EC2 instance with an IAM role, a Cloud Run instance with a Workload Identity, or your laptop.
 
 ### AWS (EC2 / ECS)
 
 ```bash
 # 1. Launch EC2 with an IAM role attached (see permissions below)
 # 2. SSH in and:
-pip install tinker-agent
-tinker init server      # detects AWS automatically, verifies CloudWatch access
-tinker server           # or: nohup tinker server &
+pip install tinkr
+tinkr init server      # detects AWS automatically, verifies CloudWatch access
+tinkr server           # or: nohup tinkr server &
 ```
 
 **Required IAM permissions:**
@@ -650,7 +650,7 @@ docker compose -f deploy/docker-compose.yml up -d
 ### Managing API keys
 
 ```bash
-# Generate (tinker init server does this automatically)
+# Generate (tinkr init server does this automatically)
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 # Hash it — store the hash in config.toml [auth], give the raw key to CLI users
@@ -691,7 +691,7 @@ Required scopes: `Contents` read, `Commits` read, `Pull requests` write, `Metada
 
 ### 2. Add to server config
 
-`tinker init server` asks for this interactively (Step 3). For manual setup:
+`tinkr init server` asks for this interactively (Step 3). For manual setup:
 
 ```bash
 # ~/.tinker/.env
@@ -767,9 +767,9 @@ api_key          = "env:GRAFANA_API_KEY"
 **Profile commands:**
 
 ```bash
-tinker profile list              # show profiles + active marker
-tinker profile use aws-staging   # switch active profile (updates config.toml)
-tinker profile add               # wizard to add a new profile
+tinkr profile list              # show profiles + active marker
+tinkr profile use aws-staging   # switch active profile (updates config.toml)
+tinkr profile add               # wizard to add a new profile
 ```
 
 ### Notifiers
@@ -822,9 +822,9 @@ Webhook payload:
 
 **Using notifiers in watches:**
 ```bash
-tinker watch start payments-api                                      # uses "default"
-tinker watch start payments-api --notifier discord-ops               # named notifier
-tinker watch start payments-api --notifier default --destination "#payments-oncall"
+tinkr watch start payments-api                                      # uses "default"
+tinkr watch start payments-api --notifier discord-ops               # named notifier
+tinkr watch start payments-api --notifier default --destination "#payments-oncall"
 ```
 
 ---
@@ -842,7 +842,7 @@ tinker watch start payments-api --notifier default --destination "#payments-onca
 
 ### 2. Add to server config
 
-`tinker init server` asks for these interactively (Step 2). For manual setup:
+`tinkr init server` asks for these interactively (Step 2). For manual setup:
 
 ```bash
 # ~/.tinker/.env
@@ -876,7 +876,7 @@ alerts_channel = "#incidents"
 
 ## Configuration reference
 
-`tinker init server` writes all of this automatically.
+`tinkr init server` writes all of this automatically.
 
 | File | Purpose |
 |---|---|
@@ -954,9 +954,9 @@ DISCORD_DEV_WEBHOOK_URL=https://discord.com/api/webhooks/...
 
 | File / Variable | Description |
 |---|---|
-| `~/.tinker/config` | Server URL + API token — written by `tinker init cli` |
-| `~/.tinker/.env` | Server secrets — written by `tinker init server`, auto-loaded by `tinker server` |
-| `~/.tinker/config.toml` | Server structure config — written by `tinker init server` |
+| `~/.tinker/config` | Server URL + API token — written by `tinkr init cli` |
+| `~/.tinker/.env` | Server secrets — written by `tinkr init server`, auto-loaded by `tinkr server` |
+| `~/.tinker/config.toml` | Server structure config — written by `tinkr init server` |
 | `~/.tinker/tinker.db` | SQLite — REPL sessions, watch state, alert rules |
 | `TINKER_SERVER_URL` | Override server URL (env var takes priority over `~/.tinker/config`) |
 | `TINKER_API_TOKEN` | Override API token (env var takes priority over `~/.tinker/config`) |
@@ -999,18 +999,18 @@ The [`local-dev/`](local-dev/) directory runs a full observability stack locally
 cd local-dev && ./run.sh
 
 # 2. Configure and start Tinker server (separate terminal)
-tinker init server
+tinkr init server
 #   Step 1 → pick Anthropic, enter ANTHROPIC_API_KEY
 #   Step 5 → pick "Self-hosted (Grafana)", enter Loki/Prometheus URLs
-tinker server
+tinkr server
 
 # 3. Point CLI at it
-tinker init cli    # URL: http://localhost:8000
+tinkr init cli    # URL: http://localhost:8000
 
 # 4. Generate traffic and query
 cd local-dev && ./generate_traffic.sh incident
-tinker anomaly payments-api --since 5m
-tinker investigate payments-api
+tinkr anomaly payments-api --since 5m
+tinkr investigate payments-api
 ```
 
 ---
@@ -1022,12 +1022,12 @@ git clone https://github.com/gettinker/tinker && cd tinker
 uv sync                          # create .venv, install all deps
 
 # Run via venv (no global install needed during dev)
-uv run tinker --help
-uv run tinker server
+uv run tinkr --help
+uv run tinkr server
 
 # Install globally as editable (changes in src/ take effect immediately)
 uv tool install --editable .
-tinker --help
+tinkr --help
 
 # Tests
 uv run pytest                    # all tests
@@ -1040,10 +1040,10 @@ All per-user state lives in `~/.tinker/`:
 
 | File | Written by | Used by |
 |---|---|---|
-| `~/.tinker/config.toml` | `tinker init server` | `tinker server` (structure + routing) |
-| `~/.tinker/.env` | `tinker init server` | `tinker server` (secrets) |
-| `~/.tinker/config` | `tinker init cli` | all CLI commands |
-| `~/.tinker/tinker.db` | auto-created | `tinker investigate`, `tinker watch`, `tinker alert` |
+| `~/.tinker/config.toml` | `tinkr init server` | `tinkr server` (structure + routing) |
+| `~/.tinker/.env` | `tinkr init server` | `tinkr server` (secrets) |
+| `~/.tinker/config` | `tinkr init cli` | all CLI commands |
+| `~/.tinker/tinker.db` | auto-created | `tinkr investigate`, `tinkr watch`, `tinkr alert` |
 
 ---
 

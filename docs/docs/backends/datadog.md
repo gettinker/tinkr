@@ -141,5 +141,5 @@ Traces are automatically correlated with logs when `DD_LOGS_INJECTION=true` is s
 export TINKER_BACKEND=datadog
 export DD_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 export DD_APP_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-uv run tinker-server
+uv run tinkr-server
 ```

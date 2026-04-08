@@ -55,11 +55,11 @@ cd tinker
 uv sync
 
 # Run the server
-TINKER_BACKEND=cloudwatch uv run tinker-server
+TINKER_BACKEND=cloudwatch uv run tinkr-server
 
 # Or install the CLI globally (available in PATH everywhere)
 uv tool install --editable .
-tinker --version
+tinkr --version
 ```
 
 ---
@@ -70,8 +70,8 @@ tinker --version
 curl http://localhost:8000/health
 # {"status":"ok","version":"0.1.0"}
 
-tinker --version
-tinker --help
+tinkr --version
+tinkr --help
 ```
 
 ---
@@ -81,7 +81,7 @@ tinker --help
 Run the setup wizard to generate `~/.tinker/config.toml` and `~/.tinker/.env`:
 
 ```bash
-tinker init server
+tinkr init server
 ```
 
 The wizard walks through:
@@ -94,7 +94,7 @@ The wizard walks through:
 Then connect the CLI:
 
 ```bash
-tinker init cli
+tinkr init cli
 # Tinker server URL [http://localhost:8000]: https://tinker.acme.internal
 # API token: <paste key from wizard>
 ```
@@ -107,11 +107,11 @@ All per-user state lives in `~/.tinker/`:
 
 | File | Written by | Purpose |
 |---|---|---|
-| `~/.tinker/config.toml` | `tinker init server` | Server structure — profiles, LLM, Slack, GitHub, auth |
-| `~/.tinker/.env` | `tinker init server` | Secrets — API keys, tokens. **Never commit this file** |
-| `~/.tinker/config` | `tinker init cli` | CLI connection — server URL + API token |
+| `~/.tinker/config.toml` | `tinkr init server` | Server structure — profiles, LLM, Slack, GitHub, auth |
+| `~/.tinker/.env` | `tinkr init server` | Secrets — API keys, tokens. **Never commit this file** |
+| `~/.tinker/config` | `tinkr init cli` | CLI connection — server URL + API token |
 | `~/.tinker/tinker.db` | auto-created | SQLite — REPL sessions, watch state, alert rules |
-| `~/.tinker/repl_history` | auto-created | `tinker investigate` command history |
+| `~/.tinker/repl_history` | auto-created | `tinkr investigate` command history |
 
 ---
 
@@ -142,4 +142,4 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" <raw-key>
 ```
 
-`tinker init server` does this automatically.
+`tinkr init server` does this automatically.
