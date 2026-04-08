@@ -21,7 +21,8 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for the full local setup guide.
 Quick start:
 
 ```bash
-git clone https://github.com/gettinker/tinker
+git clone https://github.com/gettinker/tinkr
+cd tinkr
 cd tinker
 uv sync
 uv run pytest

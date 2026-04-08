@@ -64,7 +64,8 @@ tinkr init
 If you want to modify the code or run the latest unreleased version:
 
 ```bash
-git clone https://github.com/gettinker/tinker
+git clone https://github.com/gettinker/tinkr
+cd tinkr
 cd tinker
 
 # Install all deps (including dev deps)
@@ -83,7 +84,8 @@ tinkr --version
 ## Run with Docker
 
 ```bash
-git clone https://github.com/gettinker/tinker
+git clone https://github.com/gettinker/tinkr
+cd tinkr
 cd tinker
 docker build -t tinker:local .
 

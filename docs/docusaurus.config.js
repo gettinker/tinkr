@@ -8,10 +8,10 @@ const config = {
   favicon: 'img/favicon.ico',
 
   url: 'https://gettinker.github.io',
-  baseUrl: '/tinker/',
+  baseUrl: '/tinkr/',
 
   organizationName: 'gettinker',
-  projectName: 'tinker',
+  projectName: 'tinkr',
   trailingSlash: false,
 
   onBrokenLinks: 'throw',
@@ -29,7 +29,7 @@ const config = {
       ({
         docs: {
           sidebarPath: require.resolve('./sidebars.js'),
-          editUrl: 'https://github.com/gettinker/tinker/tree/main/docs/',
+          editUrl: 'https://github.com/gettinker/tinkr/tree/main/docs/',
           routeBasePath: '/',
         },
         blog: false,
@@ -68,7 +68,7 @@ const config = {
             position: 'left',
           },
           {
-            href: 'https://github.com/gettinker/tinker',
+            href: 'https://github.com/gettinker/tinkr',
             label: 'GitHub',
             position: 'right',
           },
@@ -108,11 +108,11 @@ const config = {
             items: [
               {
                 label: 'GitHub',
-                href: 'https://github.com/gettinker/tinker',
+                href: 'https://github.com/gettinker/tinkr',
               },
               {
                 label: 'Issues',
-                href: 'https://github.com/gettinker/tinker/issues',
+                href: 'https://github.com/gettinker/tinkr/issues',
               },
             ],
           },

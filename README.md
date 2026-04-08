@@ -55,7 +55,8 @@ pip install tinkr
 ### Build from source
 
 ```bash
-git clone https://github.com/gettinker/tinker
+git clone https://github.com/gettinker/tinkr
+cd tinkr
 cd tinker
 uv sync                       # creates .venv + installs all deps
 uv tool install --editable .  # installs tinkr globally as editable
@@ -64,7 +65,8 @@ uv tool install --editable .  # installs tinkr globally as editable
 ### Docker
 
 ```bash
-git clone https://github.com/gettinker/tinker
+git clone https://github.com/gettinker/tinkr
+cd tinkr
 cd tinker
 docker build -t tinker:local .
 docker run -d -p 8000:8000 --env-file ~/.tinker/.env -v ~/.tinker:/root/.tinker tinker:local
@@ -1014,7 +1016,7 @@ tinkr investigate payments-api
 ## Development
 
 ```bash
-git clone https://github.com/gettinker/tinker && cd tinker
+git clone https://github.com/gettinker/tinkr && cd tinkr
 uv sync                          # create .venv, install all deps
 
 # Run via venv (no global install needed during dev)

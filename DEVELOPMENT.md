@@ -18,7 +18,8 @@ Everything you need to run, test, and extend Tinker locally.
 ## Setup
 
 ```bash
-git clone https://github.com/gettinker/tinker
+git clone https://github.com/gettinker/tinkr
+cd tinkr
 cd tinker
 
 # Create virtualenv and install all deps (including dev deps)

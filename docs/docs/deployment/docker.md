@@ -10,7 +10,8 @@ title: Docker / Self-hosted
 ## Build and run from source
 
 ```bash
-git clone https://github.com/gettinker/tinker
+git clone https://github.com/gettinker/tinkr
+cd tinkr
 cd tinker
 docker build -t tinker:local .
 ```
@@ -53,7 +54,8 @@ docker run -d \
 Build the image and push it to your own container registry first:
 
 ```bash
-git clone https://github.com/gettinker/tinker
+git clone https://github.com/gettinker/tinkr
+cd tinkr
 cd tinker
 docker build -t your-registry/tinker:latest .
 docker push your-registry/tinker:latest

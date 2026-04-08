@@ -146,13 +146,14 @@ docker run -d --name tinker -p 8000:8000 \
 Build the image first:
 
 ```bash
-git clone https://github.com/gettinker/tinker && cd tinker && docker build -t tinker:local .
+git clone https://github.com/gettinker/tinkr && cd tinkr && docker build -t tinker:local .
 ```
 
 Or run directly from source:
 
 ```bash
-git clone https://github.com/gettinker/tinker
+git clone https://github.com/gettinker/tinkr
+cd tinkr
 cd tinker
 uv sync
 TINKER_BACKEND=grafana uv run tinker-server
