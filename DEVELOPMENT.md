@@ -19,6 +19,7 @@ Everything you need to run, test, and extend Tinkr locally.
 
 ```bash
 git clone https://github.com/gettinker/tinkr
+cd tinkr
 
 # Create virtualenv and install all deps (including dev deps)
 uv sync
@@ -30,44 +31,103 @@ uv run pytest --collect-only   # should collect tests with no errors
 
 ---
 
-## Running the server locally
+## Local development environment
 
-### With Grafana backend (no cloud credentials needed)
+The fastest way to get a working backend without any cloud credentials is to run the [tinker-test-services](https://github.com/gettinker/tinker-test-services) stack — four dummy microservices (Python, Node.js, Java, Go) that emit structured logs to Loki and metrics to Prometheus.
 
-Set up a minimal `.env`:
+### Step 1 — Start the test services
 
 ```bash
-cat > ~/.tinkr/.env <<EOF
+git clone https://github.com/gettinker/tinker-test-services
+cd tinker-test-services
+docker compose up --build
+```
+
+This starts:
+- **Loki** at `http://localhost:3100`
+- **Prometheus** at `http://localhost:9090`
+- **Grafana** at `http://localhost:3000` (Loki pre-configured, anonymous auth)
+- **payments-api** (port 8001), **auth-service** (8002), **order-service** (8003), **inventory-service** (8004)
+
+First build takes a few minutes (Maven and Go caches are cold). On subsequent runs it's fast.
+
+### Step 2 — Configure Tinkr
+
+```bash
+mkdir -p ~/.tinkr
+
+cat > ~/.tinkr/.env << 'EOF'
 ANTHROPIC_API_KEY=sk-ant-...
+
 TINKR_BACKEND=grafana
 GRAFANA_LOKI_URL=http://localhost:3100
 GRAFANA_PROMETHEUS_URL=http://localhost:9090
-TINKR_API_KEYS='[{"hash":"<sha256>","subject":"dev","roles":["oncall"]}]'
+
+# Single dev key — hash not required for local use
+TINKR_API_KEYS='[{"hash":"dev","subject":"dev","roles":["oncall"]}]'
+EOF
+
+cat > ~/.tinkr/config.toml << 'EOF'
+[profiles.local]
+backend        = "grafana"
+loki_url       = "env:GRAFANA_LOKI_URL"
+prometheus_url = "env:GRAFANA_PROMETHEUS_URL"
+
+[profiles.local.services.payments-api]
+repo = "gettinker/tinker-test-services"
+
+[profiles.local.services.auth-service]
+repo = "gettinker/tinker-test-services"
+
+[profiles.local.services.order-service]
+repo = "gettinker/tinker-test-services"
+
+[profiles.local.services.inventory-service]
+repo = "gettinker/tinker-test-services"
 EOF
 ```
 
-Start the server in dev mode (auto-reloads on file change):
+### Step 3 — Start the Tinkr server
 
 ```bash
+cd tinkr
 uv run tinkr-server start --reload
-# or
-TINKR_BACKEND=grafana uv run python -m tinker.server.app
+# Listening on http://0.0.0.0:8000
 ```
 
-If you want Loki and Prometheus locally, run them separately with Docker:
+### Step 4 — Connect the CLI and run queries
 
 ```bash
-docker run -d --name loki -p 3100:3100 grafana/loki:latest
-docker run -d --name prometheus -p 9090:9090 \
-  -v $(pwd)/prometheus.yml:/etc/prometheus/prometheus.yml \
-  prom/prometheus:latest
+uv run tinkr init
+# Tinkr server URL [http://localhost:8000]: http://localhost:8000
+# API token: dev
+
+uv run tinkr doctor
+uv run tinkr anomaly payments-api
+uv run tinkr logs payments-api --since 10m
+uv run tinkr rca payments-api
 ```
 
-### With a real cloud backend (local dev)
+### Step 5 — Trigger errors
+
+The test services expose a `/trigger-error` endpoint to produce realistic stack traces:
+
+```bash
+curl -X POST "http://localhost:8001/trigger-error?type=db_timeout"
+curl -X POST "http://localhost:8002/trigger-error?type=token_expired"
+curl -X POST "http://localhost:8003/trigger-error?type=payment_gateway_down"
+curl -X POST "http://localhost:8004/trigger-error?type=stock_sync_failure"
+
+# Then analyse with Tinkr
+uv run tinkr rca payments-api --since 5m
+uv run tinkr investigate payments-api
+```
+
+### With a real cloud backend
 
 For CloudWatch:
 ```bash
-aws configure   # or aws sso login
+aws configure   # or: aws sso login
 export TINKR_BACKEND=cloudwatch
 export AWS_REGION=us-east-1
 uv run tinkr-server start --reload

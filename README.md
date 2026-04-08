@@ -33,39 +33,7 @@ For backend setup, deployment options (Docker, AWS, GCP, Azure), Slack bot, and 
 
 ## Development setup
 
-```bash
-git clone https://github.com/gettinker/tinkr
-cd tinkr
-
-# Install all dependencies (creates .venv automatically)
-uv sync
-
-# Copy and fill in the env file
-cp .env.example .env
-# Set at minimum: ANTHROPIC_API_KEY and TINKR_BACKEND
-
-# Run the server in dev mode (hot reload)
-uv run tinkr-server start --reload
-
-# In another terminal, run the CLI against it
-uv run tinkr doctor
-```
-
-### Project layout
-
-```
-src/tinker/
-├── backends/       ObservabilityBackend ABC + one file per provider
-├── mcp_servers/    MCP wrappers (stdio local dev / SSE remote)
-├── server/         FastAPI app, auth, SSE routes
-├── agent/          Claude orchestrator, tool definitions, guardrails
-├── interfaces/     CLI (Typer) + Slack bot (Bolt)
-├── monitor/        Background anomaly detection loop
-├── code/           Git/GitHub integration, fix application
-└── config.py       All env vars (pydantic-settings)
-```
-
-Config and secrets are written to `~/.tinkr/` by the setup wizard.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the full setup guide, including running the [tinker-test-services](https://github.com/gettinker/tinker-test-services) stack (Loki + Prometheus + dummy microservices) for a no-cloud-credentials local environment.
 
 ---
 
@@ -91,7 +59,7 @@ uv run pytest -k cloudwatch           # filter by name
 - [CONTRIBUTING.md](CONTRIBUTING.md) — PR workflow, code style, commit conventions
 - [DEVELOPMENT.md](DEVELOPMENT.md) — adding backends, MCP servers, and agent tools
 
-For the security model, credential design, and architecture decisions, see [Security](https://gettinker.github.io/tinkr/security) and the [CLAUDE.md](.claude/CLAUDE.md) in this repo.
+For the security model, credential design, and architecture decisions, see [Security](https://gettinker.github.io/tinkr/security) and [CLAUDE.md](.claude/CLAUDE.md) in this repo.
 
 ---
 
