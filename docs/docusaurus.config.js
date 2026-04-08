@@ -3,7 +3,7 @@ const { themes } = require('prism-react-renderer');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'Tinker',
+  title: 'Tinkr',
   tagline: 'AI-powered observability and incident response agent',
   favicon: 'img/favicon.ico',
 
@@ -45,7 +45,7 @@ const config = {
     ({
       image: 'img/tinker-social.png',
       navbar: {
-        title: 'Tinker',
+        title: 'Tinkr',
         logo: {
           alt: 'Tinker Logo',
           src: 'img/logo.svg',
@@ -117,7 +117,7 @@ const config = {
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} Tinker. Built with Docusaurus.`,
+        copyright: `Copyright © ${new Date().getFullYear()} Tinkr. Built with Docusaurus.`,
       },
       prism: {
         theme: themes.github,

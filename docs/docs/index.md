@@ -4,9 +4,9 @@ sidebar_position: 1
 title: Quick Start
 ---
 
-# Tinker — Quick Start
+# Tinkr — Quick Start
 
-**Tinker** is an open-source, AI-powered observability and incident response agent. It connects to your existing cloud observability stack, detects anomalies, traces them back to root causes in your source code, and proposes fixes — with human approval before any code changes are made.
+**Tinkr** is an open-source, AI-powered observability and incident response agent. It connects to your existing cloud observability stack, detects anomalies, traces them back to root causes in your source code, and proposes fixes — with human approval before any code changes are made.
 
 :::info GitHub Repository
 [https://github.com/gettinker/tinkr](https://github.com/gettinker/tinkr)
@@ -18,7 +18,7 @@ title: Quick Start
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Tinker Server  (runs anywhere with cloud access)               │
+│  Tinkr Server  (runs anywhere with cloud access)                │
 │                                                                 │
 │  POST /api/v1/rca        full AI root-cause analysis (SSE)      │
 │  POST /api/v1/anomalies  anomaly detection                      │
@@ -40,32 +40,39 @@ title: Quick Start
                (thin)        Remote MCP         (webhook → server)
 ```
 
-The server is the single point of credential trust. Cloud credentials (IAM role, Workload Identity, Managed Identity) stay on the server. The CLI and Slack bot authenticate with a short API token — they never touch cloud credentials directly.
+The server is the single point of credential trust. Cloud credentials (IAM role, Workload Identity, Managed Identity) stay on the server. The `tinkr` CLI and Slack bot authenticate with a short API token — they never touch cloud credentials directly.
 
 ---
 
 ## 5-minute setup
 
-### Step 1 — Install Tinker
+### Step 1 — Install
 
 ```bash
-pip install tinker-agent
+# uv (recommended)
+uv tool install tinkr
+
+# pipx
+pipx install tinkr
+
+# pip
+pip install tinkr
 ```
 
-Requires Python 3.12+. See [Installation](/install) for full options.
+See [Installation](/install) for all options including building from source.
 
-### Step 2 — Run the server setup wizard
+### Step 2 — Set up the server
 
 On the machine that has cloud access (EC2, Cloud Run, your laptop):
 
 ```bash
-tinker init server
+tinkr-server init
 ```
 
 The wizard walks you through:
 
 1. **LLM provider** — Anthropic, OpenRouter, OpenAI, or Groq
-2. **Slack bot** — optional, for `/tinker-*` slash commands
+2. **Slack bot** — optional, for `/tinkr-*` slash commands
 3. **GitHub** — for code investigation and auto-PRs
 4. **Server API key** — for CLI authentication
 5. **Profiles** — your cloud backend, services, and notifiers
@@ -75,26 +82,26 @@ It writes `~/.tinker/config.toml` and `~/.tinker/.env`.
 ### Step 3 — Start the server
 
 ```bash
-tinker server
+tinkr-server start
 # Listening on http://0.0.0.0:8000
 ```
 
-### Step 4 — Connect the CLI on your machine
+### Step 4 — Connect the CLI
 
 ```bash
-tinker init cli
-# Tinker server URL [http://localhost:8000]: https://tinker.acme.internal
+tinkr init
+# Tinkr server URL [http://localhost:8000]: https://tinkr.acme.internal
 # API token: <paste your token>
-# ✓ Connected: Tinker v0.1.0  backend=cloudwatch
+# ✓ Connected: Tinkr v0.1.0b1  backend=cloudwatch
 ```
 
-### Step 5 — Verify and run your first query
+### Step 5 — Run your first query
 
 ```bash
-tinker doctor                          # check server + backend
-tinker anomaly payments-api            # detect anomalies (last 1h)
-tinker investigate payments-api        # interactive REPL
-tinker rca payments-api                # full AI root-cause analysis
+tinkr doctor                          # check server + backend
+tinkr anomaly payments-api            # detect anomalies (last 1h)
+tinkr investigate payments-api        # interactive REPL
+tinkr rca payments-api                # full AI root-cause analysis
 ```
 
 ---
@@ -103,22 +110,22 @@ tinker rca payments-api                # full AI root-cause analysis
 
 ```bash
 # 1. Something looks wrong — check for anomalies
-tinker anomaly payments-api --since 30m
+tinkr anomaly payments-api --since 30m
 
 # 2. Compare to an hour ago — is it getting worse?
-tinker diff payments-api --baseline 2h --compare 1h
+tinkr diff payments-api --baseline 2h --compare 1h
 
 # 3. Did a recent deploy cause it?
-tinker deploy correlate payments-api --since 7d
+tinkr deploy correlate payments-api --since 7d
 
 # 4. Check SLO health
-tinker slo payments-api --target 99.9
+tinkr slo payments-api --target 99.9
 
 # 5. Run full AI root-cause analysis
-tinker rca payments-api --since 1h
+tinkr rca payments-api --since 1h
 
 # 6. Drill into error patterns interactively, get a fix, open a PR
-tinker investigate payments-api
+tinkr investigate payments-api
 ```
 
 ---
