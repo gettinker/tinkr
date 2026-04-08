@@ -1047,6 +1047,12 @@ All per-user state lives in `~/.tinker/`:
 
 ---
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to open issues and pull requests, and [DEVELOPMENT.md](DEVELOPMENT.md) for the local setup guide.
+
+---
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE)

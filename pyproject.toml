@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "tinker"
 version = "0.1.0"
 description = "AI-powered observability and incident response agent"
+license = { file = "LICENSE" }
 requires-python = ">=3.12"
 dependencies = [
     # Core
