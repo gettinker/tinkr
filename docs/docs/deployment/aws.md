@@ -1,5 +1,6 @@
 ---
-sidebar_position: 2title: AWS
+sidebar_position: 2
+title: AWS
 ---
 
 # Deploying on AWS
