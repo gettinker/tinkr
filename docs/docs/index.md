@@ -12,6 +12,12 @@ title: Quick Start
 [https://github.com/gettinker/tinkr](https://github.com/gettinker/tinkr)
 :::
 
+:::warning Early Development
+Tinkr is under active development. APIs, configuration formats, and CLI commands may change between releases. Production use is not yet recommended.
+
+We welcome contributions — bug reports, feature requests, and pull requests are all appreciated. See the [GitHub repository](https://github.com/gettinker/tinkr) to get involved.
+:::
+
 ---
 
 ## How it works
