@@ -8,10 +8,10 @@ const config = {
   favicon: 'img/favicon.ico',
 
   url: 'https://gettinker.github.io',
-  baseUrl: '/',
+  baseUrl: '/tinker/',
 
   organizationName: 'gettinker',
-  projectName: 'gettinker.github.io',
+  projectName: 'tinker',
   trailingSlash: false,
 
   onBrokenLinks: 'throw',
