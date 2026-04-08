@@ -9,7 +9,7 @@ title: Quick Start
 **Tinker** is an open-source, AI-powered observability and incident response agent. It connects to your existing cloud observability stack, detects anomalies, traces them back to root causes in your source code, and proposes fixes — with human approval before any code changes are made.
 
 :::info GitHub Repository
-[github.com/your-org/tinker](https://github.com/your-org/tinker)
+[https://github.com/gettinker/tinker](https://github.com/gettinker/tinker)
 :::
 
 ---
