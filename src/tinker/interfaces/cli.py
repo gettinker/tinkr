@@ -816,6 +816,28 @@ def profile_list() -> None:
             "or add a profile with [bold]tinker profile add[/bold].[/dim]"
         )
         return
+
+    # Try to fetch which profile the *server* currently has active.
+    # Falls back to the local TOML value if the server is unreachable.
+    server_active: str | None = None
+    try:
+        import asyncio as _asyncio
+
+        async def _get_server_active() -> str | None:
+            try:
+                result = await _get_client().list_profiles()
+                return result.get("active_profile")
+            except Exception:
+                return None
+
+        server_active = _asyncio.get_event_loop().run_until_complete(_get_server_active())
+    except Exception:
+        pass
+
+    local_active = cfg.active_profile or next(iter(cfg.profiles))
+    display_active = server_active or local_active
+    stale = server_active and server_active != local_active
+
     table = Table(show_header=True, header_style="bold magenta", title="Profiles")
     table.add_column("", width=2)
     table.add_column("Name")
@@ -824,7 +846,7 @@ def profile_list() -> None:
     table.add_column("Notifiers", width=10, justify="right")
     for name, p in cfg.profiles.items():
         active_marker = (
-            "[bold green]●[/bold green]" if name == cfg.active_profile else "[dim]○[/dim]"
+            "[bold green]●[/bold green]" if name == display_active else "[dim]○[/dim]"
         )
         table.add_row(
             active_marker,
@@ -834,10 +856,13 @@ def profile_list() -> None:
             str(len(p.notifiers)),
         )
     console.print(table)
-    console.print(
-        f"[dim]Active: [bold]{cfg.active_profile or next(iter(cfg.profiles))}[/bold]  "
-        "— change with [bold]tinker profile use <name>[/bold][/dim]"
-    )
+    status_line = f"[dim]Active: [bold]{display_active}[/bold]"
+    if server_active:
+        status_line += " [dim](server)[/dim]"
+    if stale:
+        status_line += f"  [yellow]⚠ local config has '{local_active}' — run [bold]tinker profile use {local_active}[/bold] to sync[/yellow]"
+    status_line += "  — change with [bold]tinker profile use <name>[/bold][/dim]"
+    console.print(status_line)
 
 
 @profile_app.command("use")
@@ -852,9 +877,29 @@ def profile_use(
         names = ", ".join(cfg.profiles) or "none"
         console.print(f"[red]Profile '{name}' not found.[/red] Available: {names}")
         raise typer.Exit(1)
+
+    # 1. Write to disk and reload local singleton
     _set_active_profile(name)
     tc.reload()
     console.print(f"[green]✓ Active profile:[/green] [bold]{name}[/bold]")
+
+    # 2. Tell the running server to reload — if there is one.
+    #    Failure here is non-fatal: the TOML is already written, the server will
+    #    pick it up on next restart, and we warn the user clearly.
+    async def _notify_server() -> None:
+        try:
+            client = _get_client()
+            result = await client.activate_profile(name)
+            console.print(
+                f"[dim]Server reloaded — backend: {result.get('backend', '?')}[/dim]"
+            )
+        except Exception as exc:
+            console.print(
+                f"[yellow]Warning:[/yellow] Could not notify server ({exc}). "
+                "Profile is saved — server will pick it up on next restart."
+            )
+
+    _run(_notify_server())
 
 
 @profile_app.command("add")

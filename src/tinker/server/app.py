@@ -85,12 +85,14 @@ def create_app() -> FastAPI:
     from tinker.server.routes.alerts import router as alerts_router
     from tinker.server.routes.deploys import router as deploys_router
     from tinker.server.routes.mcp import router as mcp_router
+    from tinker.server.routes.profiles import router as profiles_router
     from tinker.server.routes.query import router as query_router
     from tinker.server.routes.watches import router as watches_router
 
     app.include_router(agent_router)
     app.include_router(alerts_router)
     app.include_router(deploys_router)
+    app.include_router(profiles_router)
     app.include_router(query_router)
     app.include_router(mcp_router)
     app.include_router(watches_router)

@@ -443,6 +443,18 @@ class RemoteClient:
             resp.raise_for_status()
         return resp.json()
 
+    async def activate_profile(self, name: str) -> dict[str, Any]:
+        async with self._client(timeout=10.0) as c:
+            resp = await c.post(f"/api/v1/profiles/{name}/activate")
+            resp.raise_for_status()
+        return resp.json()
+
+    async def list_profiles(self) -> dict[str, Any]:
+        async with self._client(timeout=10.0) as c:
+            resp = await c.get("/api/v1/profiles")
+            resp.raise_for_status()
+        return resp.json()
+
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def parse_since(self, since: str) -> "datetime":
