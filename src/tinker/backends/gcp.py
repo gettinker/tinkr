@@ -250,8 +250,7 @@ class GCPBackend(ObservabilityBackend):
                     severity = "INFO"
         elif isinstance(entry, StructEntry):
             payload = entry.payload or {}
-            message = payload.get("message", "")
-            if not message and payload:
+            if payload:
                 message = str(payload)
             if severity in ("", "DEFAULT"):
                 severity = _level_from_payload(payload) or "INFO"
