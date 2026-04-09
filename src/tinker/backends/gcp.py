@@ -41,9 +41,19 @@ class GCPBackend(ObservabilityBackend):
     ) -> list[LogEntry]:
         import asyncio
 
-        # Translate unified query to GCP filter; raw GCP filters (containing '=')
-        # that look like native syntax are passed through unchanged.
-        if "resource.labels" in query or query == "*":
+        # Detect raw GCP filter syntax — pass it through unchanged rather than
+        # re-translating it through the Tinkr query parser.
+        # Heuristics: starts with a known GCP field prefix, or uses severity= / labels= style.
+        _GCP_NATIVE = ("resource.", "labels.", "severity=", "logName=", "httpRequest.", "jsonPayload.", "textPayload=")
+        is_native = query == "*" or any(query.startswith(p) or f" {p}" in query for p in _GCP_NATIVE)
+
+        if query == "*":
+            native_filter = (
+                f'resource.labels.service_name="{service}" '
+                f'AND timestamp>="{start.isoformat()}" '
+                f'AND timestamp<="{end.isoformat()}"'
+            )
+        elif is_native:
             native_filter = (
                 f'resource.labels.service_name="{service}" '
                 f"AND ({query}) "
@@ -257,7 +267,7 @@ class GCPBackend(ObservabilityBackend):
         anomalies: list[Anomaly] = []
 
         error_logs = await self.query_logs(
-            service, 'severity="ERROR" OR severity="CRITICAL"', start, end, limit=200
+            service, "level:ERROR", start, end, limit=200
         )
         if len(error_logs) > 10:
             representative, summary = self._summarize_logs(error_logs, window_minutes)

@@ -325,7 +325,17 @@ def build_explain_context(anomaly_dict: dict) -> str:
 
         for i, p in enumerate(summary.get("unique_patterns") or [], 1):
             lines.append(f"  Pattern {i} ({p['count']}×): {p['template'][:120]}")
-            lines.append(f"    Example: {p['example'][:160]}")
+            # Show the full example without truncation — structured log payloads
+            # (JSON health check bodies, config error messages, etc.) are often
+            # beyond 160 chars and contain the key diagnostic signal.
+            if p.get("example"):
+                lines.append(f"    Example: {p['example']}")
+            # Include additional sample entries so the LLM sees real log content,
+            # not just the de-variablised template.
+            for j, entry in enumerate(p.get("sample_entries") or [], 1):
+                if j == 1 and entry["message"] == p.get("example"):
+                    continue  # already shown above
+                lines.append(f"    Log entry {j}: [{entry['level']}] {entry['message']}")
 
         for t in summary.get("stack_traces") or []:
             lines.append("")

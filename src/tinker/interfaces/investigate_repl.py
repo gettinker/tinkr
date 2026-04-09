@@ -599,11 +599,20 @@ class InvestigateREPL:
 
 def _group_to_anomaly_dict(group: ErrorGroup, service: str) -> dict:
     """Convert an ErrorGroup into the anomaly dict shape the server endpoints expect."""
+    # Include up to 5 representative log entries so the LLM sees the actual message
+    # content, not just the de-variablised template. This matters for structured logs
+    # where the key signal is in a JSON body (e.g. health check response payloads,
+    # missing config keys, dependency error messages).
+    sample_entries = [
+        {"message": e.message, "level": e.level, "timestamp": e.timestamp.isoformat()}
+        for e in group.entries[:5]
+    ]
+
     return {
         "service": service,
         "metric": "error_logs",
         "severity": "high" if group.level in ("ERROR", "CRITICAL") else "medium",
-        "description": group.template[:200],
+        "description": group.template,
         "current_value": float(group.count),
         "threshold": 0.0,
         "detected_at": group.first_seen.isoformat() if group.first_seen else "",
@@ -614,6 +623,7 @@ def _group_to_anomaly_dict(group: ErrorGroup, service: str) -> dict:
                     "template": group.template,
                     "count": group.count,
                     "example": group.entries[0].message if group.entries else "",
+                    "sample_entries": sample_entries,
                 }
             ],
             "stack_traces": group.stack_traces,

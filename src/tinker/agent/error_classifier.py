@@ -1,11 +1,13 @@
 """Classify anomalies by error type to drive investigation depth.
 
 Classes:
-  transient   — infrastructure / environmental: DB timeout, network error,
-                rate limit, bad input (4xx), connection refused, OOM
-  logic_bug   — code defects: NPE, AttributeError, wrong query, assertion error,
-                type error, unexpected business logic failure
-  unknown     — insufficient signal to determine
+  transient     — infrastructure / environmental: DB timeout, network error,
+                  rate limit, bad input (4xx), connection refused, OOM
+  config_error  — misconfiguration: missing env var, API key not set, invalid
+                  config value, service failing health check due to missing dependency
+  logic_bug     — code defects: NPE, AttributeError, wrong query, assertion error,
+                  type error, unexpected business logic failure
+  unknown       — insufficient signal to determine
 
 The classification is a single cheap LLM call (~200 tokens).
 It drives two decisions:
@@ -22,7 +24,7 @@ from typing import Any
 
 @dataclass
 class ErrorClass:
-    kind: str  # "transient" | "logic_bug" | "unknown"
+    kind: str  # "transient" | "config_error" | "logic_bug" | "unknown"
     confidence: float  # 0.0–1.0
     reason: str  # one-line explanation used in prompts
     has_stack_trace: bool
@@ -65,6 +67,28 @@ _TRANSIENT_PATTERNS = [
     r"JDBC Connection",
 ]
 
+_CONFIG_ERROR_PATTERNS = [
+    r"not configured",
+    r"not set",
+    r"missing.*key",
+    r"API key.*not",
+    r"api key.*missing",
+    r"env.*not.*set",
+    r"environment variable.*not",
+    r"configuration.*missing",
+    r"config.*invalid",
+    r"invalid.*config",
+    r"failed to load.*config",
+    r"could not.*config",
+    r'"status"\s*:\s*"degraded"',
+    r'"issues"\s*:',
+    r"health.*check.*fail",
+    r"startup.*probe.*fail",
+    r"readiness.*probe.*fail",
+    r"liveness.*probe.*fail",
+    r"service.*unavailable.*config",
+]
+
 _LOGIC_BUG_PATTERNS = [
     r"NullPointerException",
     r"AttributeError.*NoneType",
@@ -89,6 +113,7 @@ _LOGIC_BUG_PATTERNS = [
 ]
 
 _TRANSIENT_RE = re.compile("|".join(_TRANSIENT_PATTERNS), re.IGNORECASE)
+_CONFIG_ERROR_RE = re.compile("|".join(_CONFIG_ERROR_PATTERNS), re.IGNORECASE)
 _LOGIC_BUG_RE = re.compile("|".join(_LOGIC_BUG_PATTERNS), re.IGNORECASE)
 
 # Stack trace line patterns — extract (file, line) pairs
@@ -115,16 +140,35 @@ _SKIP_PATH_PATTERNS = re.compile(
 
 
 def _extract_text(anomaly: dict[str, Any]) -> str:
-    """Pull all text fields from an anomaly dict into one string for pattern matching."""
+    """Pull all text fields from an anomaly dict into one string for pattern matching.
+
+    Extracts actual message content rather than stringifying dicts, so patterns
+    can match against real log content (e.g. JSON health check response bodies,
+    missing config key messages).
+    """
     parts: list[str] = []
     for key in ("description", "metric", "message"):
         if v := anomaly.get(key):
             parts.append(str(v))
     log_summary = anomaly.get("log_summary") or {}
     for pattern in log_summary.get("unique_patterns") or []:
-        parts.append(str(pattern))
+        if isinstance(pattern, dict):
+            # Pull actual message content, not the dict repr
+            for field in ("template", "example", "message"):
+                if v := pattern.get(field):
+                    parts.append(str(v))
+            for entry in pattern.get("sample_entries") or []:
+                if v := entry.get("message"):
+                    parts.append(str(v))
+        else:
+            parts.append(str(pattern))
     for trace in log_summary.get("stack_traces") or []:
-        parts.append(str(trace))
+        if isinstance(trace, dict):
+            for field in ("signature", "full_trace"):
+                if v := trace.get(field):
+                    parts.append(str(v))
+        else:
+            parts.append(str(trace))
     return "\n".join(parts)
 
 
@@ -155,9 +199,21 @@ def classify(anomaly: dict[str, Any]) -> ErrorClass:
         re.search(r"Traceback|at com\.|at org\.|goroutine \d+", text)
     )
 
+    config_hit = bool(_CONFIG_ERROR_RE.search(text))
     transient_hit = bool(_TRANSIENT_RE.search(text))
     logic_hit = bool(_LOGIC_BUG_RE.search(text))
 
+    # config_error takes highest priority — a missing API key or failed health check
+    # due to misconfiguration should never be classified as transient even if the
+    # log also contains "503 Service Unavailable".
+    if config_hit:
+        return ErrorClass(
+            kind="config_error",
+            confidence=0.9,
+            reason="Log contains missing config key, env var not set, or degraded health check response",
+            has_stack_trace=has_stack,
+            stack_files=stack_files,
+        )
     if logic_hit and not transient_hit:
         return ErrorClass(
             kind="logic_bug",
@@ -199,14 +255,18 @@ def _classify_with_llm(
         from tinker import toml_config as tc
 
         prompt = (
-            "Classify this production anomaly as ONE of: transient, logic_bug, unknown.\n\n"
+            "Classify this production anomaly as ONE of: transient, config_error, logic_bug, unknown.\n\n"
+            "config_error = misconfiguration: missing env var, API key not set, "
+            "service failing health check because a required config value is absent or wrong.\n"
             "transient = infrastructure/environment issue: DB timeout, network error, "
-            "rate limit, bad user input, connection refused, OOM.\n"
+            "rate limit, connection refused, OOM. Not caused by missing config.\n"
             "logic_bug = code defect: null pointer, wrong query, assertion failure, "
             "type error, incorrect business logic.\n"
             "unknown = cannot determine.\n\n"
+            "IMPORTANT: If the log shows a health check failing because an API key or env var "
+            "is not configured, classify as config_error even if the HTTP status is 503.\n\n"
             "Respond with exactly: <class>|<one sentence reason>\n"
-            "Example: transient|Connection pool exhausted under load, no code change needed.\n\n"
+            "Example: config_error|OPENROUTER_API_KEY is not set, causing the health check to return degraded.\n\n"
             f"Anomaly:\n{text[:1500]}"
         )
         response = llm_mod.complete(
