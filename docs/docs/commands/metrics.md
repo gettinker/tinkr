@@ -3,12 +3,12 @@ sidebar_position: 4
 title: metrics
 ---
 
-# tinker metrics
+# tinkr metrics
 
 Query a metric time series from a service.
 
 ```
-tinker metrics <service> [options]
+tinkr metrics <service> [options]
 ```
 
 ## Arguments
@@ -29,16 +29,16 @@ tinker metrics <service> [options]
 
 ```bash
 # HTTP request rate (last hour)
-tinker metrics payments-api
+tinkr metrics payments-api
 
 # P99 latency
-tinker metrics payments-api --metric latency_p99 --since 2h
+tinkr metrics payments-api --metric latency_p99 --since 2h
 
 # Error rate over 24h
-tinker metrics payments-api --metric error_rate --since 24h
+tinkr metrics payments-api --metric error_rate --since 24h
 
 # Raw JSON for scripting
-tinker metrics payments-api --metric cpu_usage --since 30m --json
+tinkr metrics payments-api --metric cpu_usage --since 30m --json
 ```
 
 ## Output
@@ -91,5 +91,5 @@ requests/failed
 
 ## See also
 
-- [`tinker anomaly`](anomaly) — automatically detect unusual metric behavior
-- [`tinker diff`](diff) — compare metric values between two time windows
+- [`tinkr anomaly`](anomaly) — automatically detect unusual metric behavior
+- [`tinkr diff`](diff) — compare metric values between two time windows

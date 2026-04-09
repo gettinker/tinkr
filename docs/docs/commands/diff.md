@@ -3,12 +3,12 @@ sidebar_position: 7
 title: diff
 ---
 
-# tinker diff
+# tinkr diff
 
 Compare logs and metrics between two time windows side-by-side. Useful for identifying what changed before and after a deployment or incident.
 
 ```
-tinker diff <service> [options]
+tinkr diff <service> [options]
 ```
 
 ## Arguments
@@ -29,16 +29,16 @@ tinker diff <service> [options]
 
 ```bash
 # Compare last hour vs the hour before
-tinker diff payments-api
+tinkr diff payments-api
 
 # Compare last hour vs 24h ago
-tinker diff payments-api --baseline 24h --compare 1h
+tinkr diff payments-api --baseline 24h --compare 1h
 
 # Compare last 30m vs last 2h
-tinker diff payments-api --baseline 2h --compare 30m
+tinkr diff payments-api --baseline 2h --compare 30m
 
 # JSON for scripting
-tinker diff payments-api --baseline 24h --compare 1h --json
+tinkr diff payments-api --baseline 24h --compare 1h --json
 ```
 
 ## Output
@@ -69,7 +69,7 @@ TOP LOG PATTERNS
 **Post-deployment validation**: compare traffic before and after a release.
 
 ```bash
-tinker diff payments-api --baseline 30m --compare 30m
+tinkr diff payments-api --baseline 30m --compare 30m
 ```
 
 Run this immediately after `git push` to catch regressions.
@@ -77,13 +77,13 @@ Run this immediately after `git push` to catch regressions.
 **Incident scope**: see exactly what changed when an alert fired.
 
 ```bash
-tinker diff payments-api --baseline 24h --compare 1h
+tinkr diff payments-api --baseline 24h --compare 1h
 ```
 
 **Regular Tuesday spike**: confirm a known pattern rather than investigating it.
 
 ## See also
 
-- [`tinker anomaly`](anomaly) — automated anomaly detection
-- [`tinker deploy`](deploy) — correlate diffs with specific commits
-- [`tinker rca`](rca) — full AI root-cause analysis
+- [`tinkr anomaly`](anomaly) — automated anomaly detection
+- [`tinkr deploy`](deploy) — correlate diffs with specific commits
+- [`tinkr rca`](rca) — full AI root-cause analysis

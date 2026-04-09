@@ -3,12 +3,12 @@ sidebar_position: 10
 title: slo
 ---
 
-# tinker slo
+# tinkr slo
 
 Compute SLO (Service Level Objective) availability, error budget, and burn rate for a service.
 
 ```
-tinker slo <service> [options]
+tinkr slo <service> [options]
 ```
 
 ## Arguments
@@ -29,16 +29,16 @@ tinker slo <service> [options]
 
 ```bash
 # Default: 99.9% target over 30 days
-tinker slo payments-api
+tinkr slo payments-api
 
 # Four nines
-tinker slo payments-api --target 99.99 --window 30d
+tinkr slo payments-api --target 99.99 --window 30d
 
 # Weekly SLO check
-tinker slo payments-api --target 99.9 --window 7d
+tinkr slo payments-api --target 99.9 --window 7d
 
 # JSON for dashboards
-tinker slo payments-api --target 99.9 --window 30d --json
+tinkr slo payments-api --target 99.9 --window 30d --json
 ```
 
 ## Output
@@ -95,6 +95,6 @@ A burn rate > 1.0 means the error budget will be exhausted before the window end
 
 ## See also
 
-- [`tinker anomaly`](anomaly) — detect anomalies that may be consuming error budget
-- [`tinker alert`](alert) — create burn-rate alerts
-- [`tinker diff`](diff) — compare error rate between time windows
+- [`tinkr anomaly`](anomaly) — detect anomalies that may be consuming error budget
+- [`tinkr alert`](alert) — create burn-rate alerts
+- [`tinkr diff`](diff) — compare error rate between time windows

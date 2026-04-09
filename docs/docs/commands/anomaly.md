@@ -3,12 +3,12 @@ sidebar_position: 5
 title: anomaly
 ---
 
-# tinker anomaly
+# tinkr anomaly
 
 Detect anomalies across all tracked metrics for a service. Compares current values against baselines and thresholds to surface statistically significant deviations.
 
 ```
-tinker anomaly <service> [options]
+tinkr anomaly <service> [options]
 ```
 
 ## Arguments
@@ -29,16 +29,16 @@ tinker anomaly <service> [options]
 
 ```bash
 # Check for anomalies in the last hour
-tinker anomaly payments-api
+tinkr anomaly payments-api
 
 # Last 30 minutes, high and above only
-tinker anomaly payments-api --since 30m --severity high
+tinkr anomaly payments-api --since 30m --severity high
 
 # All severity levels
-tinker anomaly payments-api --since 2h
+tinkr anomaly payments-api --since 2h
 
 # JSON for alerting pipelines
-tinker anomaly payments-api --since 1h --json
+tinkr anomaly payments-api --since 1h --json
 ```
 
 ## Output
@@ -62,15 +62,15 @@ Anomalies detected for payments-api (since 1h)
 
 ## Detection method
 
-The backend computes anomalies by comparing the current window against a historical baseline (typically 1–7 days of the same time-of-day). Thresholds can be tuned via alert rules — see [`tinker alert`](alert).
+The backend computes anomalies by comparing the current window against a historical baseline (typically 1–7 days of the same time-of-day). Thresholds can be tuned via alert rules — see [`tinkr alert`](alert).
 
 ## Integration with watches
 
-`tinker watch` runs anomaly detection on a schedule and fires notifications when the anomaly set changes. See [`tinker watch`](watch).
+`tinkr watch` runs anomaly detection on a schedule and fires notifications when the anomaly set changes. See [`tinkr watch`](watch).
 
 ## See also
 
-- [`tinker rca`](rca) — stream a full AI root-cause analysis
-- [`tinker investigate`](investigate) — interactive investigation starting from anomalies
-- [`tinker watch`](watch) — continuous background monitoring
-- [`tinker alert`](alert) — threshold-based alert rules
+- [`tinkr rca`](rca) — stream a full AI root-cause analysis
+- [`tinkr investigate`](investigate) — interactive investigation starting from anomalies
+- [`tinkr watch`](watch) — continuous background monitoring
+- [`tinkr alert`](alert) — threshold-based alert rules

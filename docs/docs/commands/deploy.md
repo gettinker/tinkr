@@ -3,12 +3,12 @@ sidebar_position: 13
 title: deploy
 ---
 
-# tinker deploy
+# tinkr deploy
 
 List recent deployments for a service and correlate them with anomaly timestamps. Requires the [GitHub integration](../integrations/github).
 
 ```
-tinker deploy <subcommand> [options]
+tinkr deploy <subcommand> [options]
 ```
 
 ## Subcommands
@@ -20,12 +20,12 @@ tinker deploy <subcommand> [options]
 
 ---
 
-## `tinker deploy list`
+## `tinkr deploy list`
 
 List recent commits for a service's repository path.
 
 ```bash
-tinker deploy list <service> [options]
+tinkr deploy list <service> [options]
 ```
 
 ### Options
@@ -38,9 +38,9 @@ tinker deploy list <service> [options]
 ### Examples
 
 ```bash
-tinker deploy list payments-api
-tinker deploy list payments-api --since 30d
-tinker deploy list payments-api --json
+tinkr deploy list payments-api
+tinkr deploy list payments-api --since 30d
+tinkr deploy list payments-api --json
 ```
 
 ### Output
@@ -57,12 +57,12 @@ Recent deploys — payments-api (last 7d)
 
 ---
 
-## `tinker deploy correlate`
+## `tinkr deploy correlate`
 
 Cross-reference recent commits with anomaly timestamps. Commits within 30 minutes of an anomaly are flagged.
 
 ```bash
-tinker deploy correlate <service> [options]
+tinkr deploy correlate <service> [options]
 ```
 
 ### Options
@@ -75,8 +75,8 @@ tinker deploy correlate <service> [options]
 ### Examples
 
 ```bash
-tinker deploy correlate payments-api
-tinker deploy correlate payments-api --since 14d
+tinkr deploy correlate payments-api
+tinkr deploy correlate payments-api --since 14d
 ```
 
 ### Output
@@ -130,5 +130,5 @@ A commit is flagged as correlated if anomalies were detected within **±30 minut
 ## See also
 
 - [GitHub Integration](../integrations/github)
-- [`tinker anomaly`](anomaly) — detect anomalies without deploy context
-- [`tinker diff`](diff) — compare before/after a deploy
+- [`tinkr anomaly`](anomaly) — detect anomalies without deploy context
+- [`tinkr diff`](diff) — compare before/after a deploy

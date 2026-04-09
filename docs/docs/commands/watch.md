@@ -3,12 +3,12 @@ sidebar_position: 11
 title: watch
 ---
 
-# tinker watch
+# tinkr watch
 
 Manage continuous background monitoring. A watch polls a service at a regular interval and fires a notification when the anomaly set changes.
 
 ```
-tinker watch <subcommand> [options]
+tinkr watch <subcommand> [options]
 ```
 
 ## Subcommands
@@ -22,10 +22,10 @@ tinker watch <subcommand> [options]
 
 ---
 
-## `tinker watch start`
+## `tinkr watch start`
 
 ```bash
-tinker watch start <service> [options]
+tinkr watch start <service> [options]
 ```
 
 ### Options
@@ -40,16 +40,16 @@ tinker watch start <service> [options]
 
 ```bash
 # Start with defaults (60s interval, default notifier)
-tinker watch start payments-api
+tinkr watch start payments-api
 
 # Faster polling, specific Slack channel
-tinker watch start payments-api --interval 30 --notifier slack-ops --destination "#payments-oncall"
+tinkr watch start payments-api --interval 30 --notifier slack-ops --destination "#payments-oncall"
 
 # PagerDuty
-tinker watch start payments-api --notifier pagerduty
+tinkr watch start payments-api --notifier pagerduty
 
 # Discord
-tinker watch start auth-service --notifier discord-ops
+tinkr watch start auth-service --notifier discord-ops
 ```
 
 ### Output
@@ -64,10 +64,10 @@ Watch started
 
 ---
 
-## `tinker watch list`
+## `tinkr watch list`
 
 ```bash
-tinker watch list
+tinkr watch list
 ```
 
 ### Output
@@ -81,28 +81,28 @@ watch-9f8e7d6c   inventory-api   60s       stopped  default     13:45:12
 
 ---
 
-## `tinker watch stop`
+## `tinkr watch stop`
 
 Stops the watch (marks it `stopped`) but keeps it in the database.
 
 ```bash
-tinker watch stop watch-a3f2b1c4
+tinkr watch stop watch-a3f2b1c4
 ```
 
-You can restart a stopped watch by calling `tinker watch start` again for the same service.
+You can restart a stopped watch by calling `tinkr watch start` again for the same service.
 
 ---
 
-## `tinker watch delete`
+## `tinkr watch delete`
 
 Permanently removes the watch from the database. Use this after stopping a watch you no longer need.
 
 ```bash
-tinker watch delete watch-a3f2b1c4
+tinkr watch delete watch-a3f2b1c4
 ```
 
 :::warning
-This is a hard delete. The watch will not appear in `tinker watch list` and cannot be recovered.
+This is a hard delete. The watch will not appear in `tinkr watch list` and cannot be recovered.
 :::
 
 ---
@@ -156,6 +156,6 @@ Watches persist across server restarts. The watch state is stored in `~/.tinkr/t
 
 ## See also
 
-- [`tinker alert`](alert) — threshold-based rules (complement to watches)
+- [`tinkr alert`](alert) — threshold-based rules (complement to watches)
 - [Slack Integration](../integrations/slack) — alert routing via Slack
 - [Webhooks](../integrations/webhooks) — webhook notifier configuration

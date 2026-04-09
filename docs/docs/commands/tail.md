@@ -3,12 +3,12 @@ sidebar_position: 3
 title: tail
 ---
 
-# tinker tail
+# tinkr tail
 
 Stream live logs to your terminal. Polls the backend continuously and prints new lines as they arrive.
 
 ```
-tinker tail <service> [options]
+tinkr tail <service> [options]
 ```
 
 ## Arguments
@@ -28,13 +28,13 @@ tinker tail <service> [options]
 
 ```bash
 # Stream all logs
-tinker tail payments-api
+tinkr tail payments-api
 
 # Errors only
-tinker tail payments-api --filter level:ERROR
+tinkr tail payments-api --filter level:ERROR
 
 # Fast polling
-tinker tail payments-api --interval 2
+tinkr tail payments-api --interval 2
 ```
 
 ## Output
@@ -52,11 +52,11 @@ Press `Ctrl+C` to stop.
 
 ## Notes
 
-- `tinker tail` is implemented as a polling loop, not a true WebSocket stream. Most observability backends do not expose a push-based log stream.
+- `tinkr tail` is implemented as a polling loop, not a true WebSocket stream. Most observability backends do not expose a push-based log stream.
 - For high-volume services, use `--filter` to reduce noise.
 - The `--interval` floor is `1` second — lower values may overwhelm the backend.
 
 ## See also
 
-- [`tinker logs`](logs) — non-streaming log fetch
-- [`tinker investigate`](investigate) — AI investigation starting from recent logs
+- [`tinkr logs`](logs) — non-streaming log fetch
+- [`tinkr investigate`](investigate) — AI investigation starting from recent logs

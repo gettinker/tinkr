@@ -3,12 +3,12 @@ sidebar_position: 2
 title: logs
 ---
 
-# tinker logs
+# tinkr logs
 
 Fetch recent log lines from a service.
 
 ```
-tinker logs <service> [options]
+tinkr logs <service> [options]
 ```
 
 ## Arguments
@@ -30,19 +30,19 @@ tinker logs <service> [options]
 
 ```bash
 # Last hour of logs
-tinker logs payments-api
+tinkr logs payments-api
 
 # Last 30 minutes, errors only
-tinker logs payments-api --since 30m --filter level:ERROR
+tinkr logs payments-api --since 30m --filter level:ERROR
 
 # Search for a specific exception
-tinker logs payments-api --since 2h --filter "NullPointerException"
+tinkr logs payments-api --since 2h --filter "NullPointerException"
 
 # Return up to 500 lines
-tinker logs payments-api --since 6h --limit 500
+tinkr logs payments-api --since 6h --limit 500
 
 # Machine-readable output
-tinker logs payments-api --since 1h --json
+tinkr logs payments-api --since 1h --json
 ```
 
 ## Output
@@ -69,5 +69,5 @@ The `--filter` value is passed to the backend's native query engine. Use the syn
 
 ## See also
 
-- [`tinker tail`](tail) — stream logs live
-- [`tinker investigate`](investigate) — start an AI-powered investigation from log context
+- [`tinkr tail`](tail) — stream logs live
+- [`tinkr investigate`](investigate) — start an AI-powered investigation from log context

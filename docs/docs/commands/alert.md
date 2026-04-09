@@ -3,12 +3,12 @@ sidebar_position: 12
 title: alert
 ---
 
-# tinker alert
+# tinkr alert
 
 Manage threshold-based alert rules. An alert rule fires a notification when a metric crosses a defined threshold, regardless of whether a watch is running.
 
 ```
-tinker alert <subcommand> [options]
+tinkr alert <subcommand> [options]
 ```
 
 ## Subcommands
@@ -22,10 +22,10 @@ tinker alert <subcommand> [options]
 
 ---
 
-## `tinker alert create`
+## `tinkr alert create`
 
 ```bash
-tinker alert create <service> <metric> <operator> <threshold> [options]
+tinkr alert create <service> <metric> <operator> <threshold> [options]
 ```
 
 ### Arguments
@@ -49,16 +49,16 @@ tinker alert create <service> <metric> <operator> <threshold> [options]
 
 ```bash
 # Fire when error count exceeds 50
-tinker alert create payments-api error_count gt 50
+tinkr alert create payments-api error_count gt 50
 
 # High severity p99 latency alert → PagerDuty
-tinker alert create payments-api latency_p99 gt 1000 --severity high --notifier pagerduty
+tinkr alert create payments-api latency_p99 gt 1000 --severity high --notifier pagerduty
 
 # Alert when request rate drops below minimum
-tinker alert create payments-api request_rate lt 100 --severity critical
+tinkr alert create payments-api request_rate lt 100 --severity critical
 
 # Route to specific Slack channel
-tinker alert create auth-service error_count gt 20 --notifier slack-ops --destination "#auth-oncall"
+tinkr alert create auth-service error_count gt 20 --notifier slack-ops --destination "#auth-oncall"
 ```
 
 ### Output
@@ -74,10 +74,10 @@ Alert rule created
 
 ---
 
-## `tinker alert list`
+## `tinkr alert list`
 
 ```bash
-tinker alert list
+tinkr alert list
 ```
 
 ### Output
@@ -91,22 +91,22 @@ alert-9f8e7d6c   auth-service    error_count     > 20        medium    slack-ops
 
 ---
 
-## `tinker alert delete`
+## `tinkr alert delete`
 
 Permanently removes an alert rule.
 
 ```bash
-tinker alert delete alert-a3f2b1c4
+tinkr alert delete alert-a3f2b1c4
 ```
 
 ---
 
-## `tinker alert mute`
+## `tinkr alert mute`
 
 Silence an alert rule for a period without deleting it. Useful during planned maintenance.
 
 ```bash
-tinker alert mute alert-a3f2b1c4 [options]
+tinkr alert mute alert-a3f2b1c4 [options]
 ```
 
 ### Options
@@ -119,20 +119,20 @@ tinker alert mute alert-a3f2b1c4 [options]
 
 ```bash
 # Mute for 30 minutes (default)
-tinker alert mute alert-a3f2b1c4
+tinkr alert mute alert-a3f2b1c4
 
 # Mute for 2 hours during maintenance window
-tinker alert mute alert-a3f2b1c4 --for 2h
+tinkr alert mute alert-a3f2b1c4 --for 2h
 
 # Mute for a full day
-tinker alert mute alert-a3f2b1c4 --for 1d
+tinkr alert mute alert-a3f2b1c4 --for 1d
 ```
 
 ---
 
 ## Alert rules vs watches
 
-| | `tinker alert` | `tinker watch` |
+| | `tinkr alert` | `tinkr watch` |
 |---|---|---|
 | Trigger | Specific metric threshold | Any anomaly change |
 | Granularity | Per metric, per threshold | Per service, all metrics |
@@ -143,7 +143,7 @@ Use both together: watches catch unexpected anomalies, alert rules enforce hard 
 
 ## See also
 
-- [`tinker watch`](watch) — continuous background monitoring
-- [`tinker slo`](slo) — compute error budget and burn rate
+- [`tinkr watch`](watch) — continuous background monitoring
+- [`tinkr slo`](slo) — compute error budget and burn rate
 - [Slack Integration](../integrations/slack) — Slack notifier configuration
 - [Webhooks](../integrations/webhooks) — webhook notifier configuration

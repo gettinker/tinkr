@@ -3,12 +3,12 @@ sidebar_position: 8
 title: investigate
 ---
 
-# tinker investigate
+# tinkr investigate
 
 Start an interactive REPL (read-eval-print loop) for AI-powered root-cause analysis. The session maintains context across multiple turns, letting you iteratively explore an incident.
 
 ```
-tinker investigate <service> [options]
+tinkr investigate <service> [options]
 ```
 
 ## Arguments
@@ -27,8 +27,8 @@ tinker investigate <service> [options]
 ## Starting a session
 
 ```bash
-tinker investigate payments-api
-tinker investigate payments-api --since 2h
+tinkr investigate payments-api
+tinkr investigate payments-api --since 2h
 ```
 
 Tinkr immediately fetches anomalies and recent logs, then opens the REPL:
@@ -37,7 +37,7 @@ Tinkr immediately fetches anomalies and recent logs, then opens the REPL:
 Investigating payments-api  [sess-a3f2b1c4]
 Anomalies: 2 (HIGH: error_count, MEDIUM: latency_p99)
 
-tinker> _
+tinkr> _
 ```
 
 ## REPL commands
@@ -58,7 +58,7 @@ tinker> _
 ## Example session
 
 ```
-tinker> explain
+tinkr> explain
 
   Root cause: Stripe API is returning timeouts (HTTP 504) on charge requests.
   The error rate spike (847 errors in 10m) correlates exactly with Stripe's
@@ -67,19 +67,19 @@ tinker> explain
   Classification: dependency_down
   Confidence: high
 
-tinker> logs level:ERROR
+tinkr> logs level:ERROR
 
   [14:01:03] Stripe::Timeout charge_id=ch_abc123 attempt=3/3
   [14:01:04] Stripe::Timeout charge_id=ch_def456 attempt=3/3
 
-tinker> context "Stripe status page shows incident since 13:55 UTC"
+tinkr> context "Stripe status page shows incident since 13:55 UTC"
 
   Context added. Updating analysis...
 
   This confirms the external dependency failure. No code change needed.
   Recommend: retry queue + circuit breaker for Stripe calls.
 
-tinker> fix
+tinkr> fix
 
   Proposed fix: add exponential backoff with jitter to the Stripe charge call.
 
@@ -97,9 +97,9 @@ tinker> fix
 
   Apply this fix? Type `approve` to open a PR.
 
-tinker> approve
+tinkr> approve
 
-  Branch: tinker/fix-a3f2b1c4
+  Branch: tinkr/fix-a3f2b1c4
   PR:     https://github.com/acme/payments/pull/247
   Status: open — awaiting review
 ```
@@ -108,12 +108,12 @@ tinker> approve
 
 ```bash
 # Get the session ID
-tinker investigate payments-api
+tinkr investigate payments-api
 # tinker> session
 # sess-a3f2b1c4
 
 # Resume later
-tinker investigate payments-api --session sess-a3f2b1c4
+tinkr investigate payments-api --session sess-a3f2b1c4
 ```
 
 Sessions are stored in `~/.tinkr/tinker.db` and persist between terminal sessions.
@@ -126,6 +126,6 @@ GitHub integration must be configured for `fix` and `approve` to work. See [GitH
 
 ## See also
 
-- [`tinker rca`](rca) — non-interactive streaming RCA (better for automation)
-- [`tinker fix`](investigate) — `fix` is a REPL subcommand, not a standalone command
+- [`tinkr rca`](rca) — non-interactive streaming RCA (better for automation)
+- [`tinkr fix`](investigate) — `fix` is a REPL subcommand, not a standalone command
 - [GitHub Integration](../integrations/github)

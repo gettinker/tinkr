@@ -3,12 +3,12 @@ sidebar_position: 14
 title: profile
 ---
 
-# tinker profile
+# tinkr profile
 
 Manage named profiles. A profile groups backend configuration, service definitions, and notifiers for a specific environment (e.g. `aws-prod`, `gcp-staging`).
 
 ```
-tinker profile <subcommand>
+tinkr profile <subcommand>
 ```
 
 ## Subcommands
@@ -21,10 +21,10 @@ tinker profile <subcommand>
 
 ---
 
-## `tinker profile list`
+## `tinkr profile list`
 
 ```bash
-tinker profile list
+tinkr profile list
 ```
 
 ### Output
@@ -39,28 +39,28 @@ azure-prod    azure
 
 ---
 
-## `tinker profile use`
+## `tinkr profile use`
 
 Switch the active profile. All subsequent commands use this profile.
 
 ```bash
-tinker profile use aws-prod
+tinkr profile use aws-prod
 ```
 
 You can also pass `--profile` on any command without changing the default:
 
 ```bash
-tinker anomaly payments-api --profile gcp-staging
+tinkr anomaly payments-api --profile gcp-staging
 ```
 
 ---
 
-## `tinker profile show`
+## `tinkr profile show`
 
 Display the active profile's full configuration (secrets redacted).
 
 ```bash
-tinker profile show
+tinkr profile show
 ```
 
 ### Output
@@ -128,14 +128,14 @@ Use profiles to work across multiple cloud accounts in a single terminal session
 
 ```bash
 # Check prod
-tinker anomaly payments-api --profile aws-prod
+tinkr anomaly payments-api --profile aws-prod
 
 # Check staging
-tinker anomaly payments-api --profile gcp-staging
+tinkr anomaly payments-api --profile gcp-staging
 
 # Switch default for the session
-tinker profile use aws-prod
-tinker anomaly payments-api
+tinkr profile use aws-prod
+tinkr anomaly payments-api
 ```
 
 ## See also

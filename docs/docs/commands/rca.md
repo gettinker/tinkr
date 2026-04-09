@@ -3,12 +3,12 @@ sidebar_position: 9
 title: rca
 ---
 
-# tinker rca
+# tinkr rca
 
 Stream a full AI root-cause analysis report to the terminal. Non-interactive — outputs a structured report and exits. Suitable for automation, runbooks, and CI pipelines.
 
 ```
-tinker rca <service> [options]
+tinkr rca <service> [options]
 ```
 
 ## Arguments
@@ -28,13 +28,13 @@ tinker rca <service> [options]
 
 ```bash
 # RCA for the last hour
-tinker rca payments-api
+tinkr rca payments-api
 
 # Deep analysis over 2 hours
-tinker rca payments-api --since 2h
+tinkr rca payments-api --since 2h
 
 # JSON stream (for log aggregation or scripts)
-tinker rca payments-api --since 1h --json
+tinkr rca payments-api --since 1h --json
 ```
 
 ## Output sections
@@ -90,9 +90,9 @@ With `--json`, each section is emitted as a newline-delimited JSON event:
 {"type": "done"}
 ```
 
-## Difference from `tinker investigate`
+## Difference from `tinkr investigate`
 
-| | `tinker rca` | `tinker investigate` |
+| | `tinkr rca` | `tinkr investigate` |
 |---|---|---|
 | Mode | Non-interactive, streaming | Interactive REPL |
 | Use case | Automation, runbooks, PagerDuty webhooks | Human-led incident response |
@@ -101,5 +101,5 @@ With `--json`, each section is emitted as a newline-delimited JSON event:
 
 ## See also
 
-- [`tinker investigate`](investigate) — interactive investigation with fix and approve
-- [`tinker anomaly`](anomaly) — list anomalies without full analysis
+- [`tinkr investigate`](investigate) — interactive investigation with fix and approve
+- [`tinkr anomaly`](anomaly) — list anomalies without full analysis

@@ -3,12 +3,12 @@ sidebar_position: 6
 title: trace
 ---
 
-# tinker trace
+# tinkr trace
 
 Retrieve distributed traces for a service and display the slowest or most error-prone requests.
 
 ```
-tinker trace <service> [options]
+tinkr trace <service> [options]
 ```
 
 ## Arguments
@@ -30,16 +30,16 @@ tinker trace <service> [options]
 
 ```bash
 # Last 20 traces
-tinker trace payments-api
+tinkr trace payments-api
 
 # Last 30 minutes, up to 50 traces
-tinker trace payments-api --since 30m --limit 50
+tinkr trace payments-api --since 30m --limit 50
 
 # Only failed traces
-tinker trace payments-api --tags http.status_code=500
+tinkr trace payments-api --tags http.status_code=500
 
 # JSON output
-tinker trace payments-api --since 1h --json
+tinkr trace payments-api --since 1h --json
 ```
 
 ## Output
@@ -88,5 +88,5 @@ Tracing must be enabled in your application. Tinkr reads from the tracing backen
 
 ## See also
 
-- [`tinker investigate`](investigate) — traces are included in the investigation context
-- [`tinker rca`](rca) — RCA fetches traces automatically
+- [`tinkr investigate`](investigate) — traces are included in the investigation context
+- [`tinkr rca`](rca) — RCA fetches traces automatically
