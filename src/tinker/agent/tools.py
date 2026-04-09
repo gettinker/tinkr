@@ -95,23 +95,40 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     ),
     _fn(
         "get_file",
-        "Read a source file from the monitored repository.",
+        (
+            "Read a source file from the monitored repository. "
+            "ONLY call this with a path confirmed to exist via glob_files or search_code. "
+            "NEVER guess or infer paths from node names, service names, or error messages — "
+            "always discover the path first."
+        ),
         {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "File path relative to repo root"},
+                "path": {
+                    "type": "string",
+                    "description": "File path relative to repo root (must be confirmed via glob_files or search_code, not guessed)",
+                },
             },
             "required": ["path"],
         },
     ),
     _fn(
         "search_code",
-        "Search the codebase for a pattern using ripgrep.",
+        (
+            "Search the entire codebase for a text pattern using ripgrep. "
+            "Use this to locate which file a node_id, function name, class, or error string is defined in "
+            "BEFORE calling get_file. Works across all languages by default — "
+            "optionally restrict with file_glob (e.g. '**/*.yaml', '**/*.js', '**/*.go')."
+        ),
         {
             "type": "object",
             "properties": {
                 "pattern": {"type": "string"},
-                "file_glob": {"type": "string", "default": "**/*.py"},
+                "file_glob": {
+                    "type": "string",
+                    "description": "Glob to restrict search by file type, e.g. '**/*.yaml', '**/*.js'. Omit to search all text files.",
+                    "default": "**/*",
+                },
                 "context_lines": {"type": "integer", "default": 3},
             },
             "required": ["pattern"],
@@ -244,16 +261,24 @@ class ToolDispatcher:
             end=end,
             limit=inp.get("limit", 100),
         )
-        return [
-            {
+        results = []
+        for e in entries:
+            entry: dict[str, Any] = {
                 "timestamp": e.timestamp.isoformat(),
                 "level": e.level,
                 "message": sanitize_log_content(e.message),
                 "service": e.service,
                 "trace_id": e.trace_id,
             }
-            for e in entries
-        ]
+            # Structured fields from the log payload (e.g. node_id, workflow_id,
+            # error detail) are essential for root-cause analysis and must reach
+            # the agent — do not discard them.
+            if e.extra:
+                entry["extra"] = {
+                    k: sanitize_log_content(str(v)) for k, v in e.extra.items()
+                }
+            results.append(entry)
+        return results
 
     async def _get_recent_errors(self, inp: dict[str, Any]) -> list[dict[str, Any]]:
         backend = self._get_backend()
@@ -261,14 +286,19 @@ class ToolDispatcher:
             service=inp["service"],
             minutes=inp.get("minutes", 30),
         )
-        return [
-            {
+        results = []
+        for e in entries:
+            entry: dict[str, Any] = {
                 "timestamp": e.timestamp.isoformat(),
                 "message": sanitize_log_content(e.message),
                 "trace_id": e.trace_id,
             }
-            for e in entries
-        ]
+            if e.extra:
+                entry["extra"] = {
+                    k: sanitize_log_content(str(v)) for k, v in e.extra.items()
+                }
+            results.append(entry)
+        return results
 
     async def _get_metrics(self, inp: dict[str, Any]) -> list[dict[str, Any]]:
         backend = self._get_backend()
@@ -336,19 +366,17 @@ class ToolDispatcher:
         import subprocess
 
         repo = self._repo_path or "."
-        result = subprocess.run(
-            [
-                "rg",
-                "--glob",
-                inp.get("file_glob", "**/*.py"),
-                "--context",
-                str(inp.get("context_lines", 3)),
-                inp["pattern"],
-                repo,
-            ],
-            capture_output=True,
-            text=True,
-        )
+        file_glob = inp.get("file_glob") or "**/*"
+        cmd = [
+            "rg",
+            "--glob", file_glob,
+            "--context", str(inp.get("context_lines", 3)),
+            # Exclude binary files and generated artifacts regardless of glob
+            "--type-not", "min",
+            inp["pattern"],
+            repo,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
         return result.stdout or "(no matches)"
 
     def _get_recent_commits(self, inp: dict[str, Any]) -> list[dict[str, str]]:

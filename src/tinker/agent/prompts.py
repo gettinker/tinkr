@@ -22,6 +22,16 @@ Your job is to analyze production incidents by:
 - Never suggest deleting data, dropping tables, or disabling auth as a "quick fix".
 - Proposed diffs must be minimal — change only what is necessary.
 - Never include credentials, tokens, or PII in your output.
+
+## Code lookup rules
+- NEVER call get_file with a guessed path. Always call search_code or glob_files first
+  to confirm the file exists and discover its exact path.
+- When a log entry contains structured fields (node_id, workflow_id, function, handler,
+  class, error), use those values as search_code patterns to locate the relevant source.
+- search_code searches all file types by default — do not restrict to a single language
+  unless you are certain of the file extension.
+- Workflow engines, orchestrators, and polyglot services store logic in YAML, JSON, JS,
+  Python, Go, or other languages. Always discover before assuming.
 """
 
 FIX_SYSTEM_PROMPT = """\
